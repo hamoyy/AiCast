@@ -11,7 +11,8 @@ import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
-import io.ktor.server.engine.ApplicationEngine
+import io.ktor.server.cio.CIOApplicationEngine
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.http.content.LocalFileContent
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
@@ -34,6 +35,8 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.util.pipeline.PipelineContext
 import io.ktor.utils.io.jvm.javaio.copyTo
+import io.ktor.utils.io.writeFully
+import io.ktor.utils.io.readAvailable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -64,7 +67,7 @@ object Server {
     @Volatile var lastError: String? = null
         private set
 
-    @Volatile private var engine: ApplicationEngine? = null
+    @Volatile private var engine: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
 
     fun isRunning(): Boolean = engine != null
 
@@ -191,7 +194,7 @@ private fun mount(rt: Routing) = with(rt) {
                 HttpStatusCode.TooManyRequests,
                 errLocked("密码错误次数过多，请稍后再试", Auth.lockRemainingMs())
             )
-        val body = try { receiveLimited() }
+        val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
@@ -226,7 +229,7 @@ private fun mount(rt: Routing) = with(rt) {
                 HttpStatusCode.Forbidden,
                 err("permission_denied", "该设备未开放 render，请到 aiface 设置开启")
             )
-        val body = try { receiveLimited() }
+        val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
@@ -280,7 +283,7 @@ private fun mount(rt: Routing) = with(rt) {
     // 注册一个 agent 自定义 HTML 首页主题；activate=true 立即设为首页
     post("/theme") {
         if (!hasPerm(call, "render", "注册主题复用投送权限")) return@post
-        val body = try { receiveLimited() }
+        val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
@@ -460,7 +463,7 @@ private fun mount(rt: Routing) = with(rt) {
             return@post call.respond(
                 HttpStatusCode.Forbidden, err("permission_denied", "该设备未开放 message")
             )
-        val body = try { receiveLimited() }
+        val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
@@ -482,7 +485,7 @@ private fun mount(rt: Routing) = with(rt) {
             return@post call.respond(
                 HttpStatusCode.Forbidden, err("permission_denied", "该设备未开放 param")
             )
-        val obj = try { parseObj(receiveLimited() ?: "") }
+        val obj = try { parseObj(call.receiveLimited() ?: "") }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
@@ -544,11 +547,11 @@ private suspend fun hasPerm(call: ApplicationCall, permission: String, hint: Str
     return false
 }
 
-private suspend fun PipelineContext<*, ApplicationCall>.receiveLimited(): String? {
-    val len = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+private suspend fun ApplicationCall.receiveLimited(): String? {
+    val len = request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
     if (len != null && len > MAX_BODY_BYTES) return null
     return try {
-        call.receiveText()
+        receiveText()
     } catch (e: io.ktor.utils.io.charsets.MalformedInputException) {
         throw BadBody("body 必须是 UTF-8 编码的 JSON")
     }

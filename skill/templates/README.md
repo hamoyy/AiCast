@@ -4,6 +4,12 @@ agent 生成投送内容时优先复制对应模板再填充（见 SKILL.md「�
 模板遵守同一铁律：HTML 本体单文件（CSS/JS 内联，设备默认可联网、可引外链真图/CDN）、`viewport-fit=cover`、`env(safe-area-inset-*)` 避让挖孔/刘海、
 通过内置 `Aiface` SDK 回传事件。样式为深色高对比基线，可按 `info` 里的 `appearance.darkMode` 反转。
 
+「回传事件」列可直接用于 `$A events` 过滤。
+**命名规则：事件名务必带点号**（`todo.toggle` 而非 `toggle`），且不要以
+`system. / auth. / app. / device. / capability. / render. / media. / theme.` 开头 ——
+否则设备会把它改写成 `page.*`（冒名系统事件被降级）或补 `ui.` 前缀（无点号），
+你在 `events` 里按原名捞不到。详见 SKILL.md「交互回传」。
+
 | 文件 | 适用画像 (interactionModel) | 结构与填充点 | 回传事件 |
 |---|---|---|---|
 | `todo-interactive.html` | touch · 手机竖屏 | 单列待办卡片流；勾选+进度条；`items` 初始数组；localStorage 持久化 | `todo.toggle`、`todo.allDone`；`/message` 支持 `{action:"add"\|"clear"}` |

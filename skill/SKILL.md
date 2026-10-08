@@ -5,8 +5,9 @@ description: 局域网内 AI 向安卓设备投送 HTML 内容并读取设备画
 
 # aiface — AI 的局域网显示通道
 
-aiface app 跑在目标安卓设备上，内置 HTTP server（端口 43210）。本 Skill 提供零依赖 CLI
-（`bin/aiface`，Node 18+），agent 用 Bash 调用：发现 → 鉴权 → 投送 HTML → （需要时）读回传。
+aiface app 跑在目标安卓设备上，内置 HTTP server（默认端口 43210，被占用时顺延 43211…，
+真实端口以 `/info` 上报为准）。本 Skill 提供零依赖 CLI（`bin/aiface`，Node 18+），
+agent 用 Bash 调用：发现 → 鉴权 → 投送 HTML → （需要时）读回传。
 
 **核心铁律：内容永远不写死，HTML 是唯一契约。先取画像，再生成内容。**
 
@@ -62,9 +63,21 @@ $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF
 ## 交互回传（按需，不是日常必用）
 
 页内 SDK 已自动注入，内容里随时可 `Aiface.emit(name, data)` 回传事件、`Aiface.onMessage` 收增量数据。
-读取端**不需要常驻监听服务**：设备侧有事件环形缓冲（最近 200 条/10 分钟），
+读取端**不需要常驻监听服务**：设备侧有事件环形缓冲（**最近 200 条**），
 `$A events <dev> --since 0` 任何时候跑一次就能把攒下的事件一次取回；`--follow` 持续监听仅调试时用。
 建议用在：需要知道用户点了什么（投票/勾选/游戏）、或排查页面为什么没反应。日常投送不取事件也完全成立。
+
+**事件名会被设备按安全规则改写**，写页面时要按最终形态去 `events` 里捞：
+
+| 页面里 emit 的名字 | 设备实际记录的 kind | 说明 |
+|---|---|---|
+| `todo.toggle`、`slide.played`、`remote.pause` …（含点号且非保留字） | 原样保留 | 绝大多数情况，照模板写即可 |
+| `system.xxx`、`auth.xxx`、`app.xxx`、`device.xxx`、`capability.xxx`、`render.xxx`、`media.xxx`、`theme.xxx` | 降级为 `page.xxx` | 页面不可冒名系统事件，这是刻意约束 |
+| `done`、`approve`（不含点号） | 加前缀 `ui.done`、`ui.approve` | 建议一开始就写带点号的名字 |
+
+名字限 `[A-Za-z0-9_-.]`，最长 64 字符，过滤后为空则该事件被丢弃。
+另外：seq 已持久化，设备重启不会回零；但**缓冲本身是进程内的，重启即清空** ——
+此时 `since` 保持不变也安全，CLI 会识别设备的 `reset` 标记自动从头续拉。
 
 ## CLI 命令参考
 
@@ -77,16 +90,39 @@ $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF
 | `render <dev> --html-file f \| --html '<h>' \| --url u \| --clear [--wake]` | 投送/加载 URL/回待机；wake=亮屏投 |
 | `message <dev> --data '<json>' \| --data-file f` | 给页面发增量数据（透传给 `Aiface.onMessage`） |
 | `events <dev> [--since N] [--timeout s] [--follow]` | 取回传事件（见上一节） |
-| `state <dev>` | 当前渲染状态（hasContent/url/screenOn/theme） |
-| `param <dev> [key] [value]` | 读/设 brightness/theme/fontScale/volume/rotationLock/idleDimSeconds |
+| `state <dev>` | 当前渲染状态（hasContent/url/screenOn/theme/**pending**） |
+| `param <dev> [key] [value]` | 读/设 **brightness / theme / fontScale / volume**（四选一） |
 | `themes <dev>` / `theme <dev> <id>` | 列出主题 / 激活待机主题 |
 | `theme <dev> --register (--html-file f \| --html '<h>') [--name N] [--id ID] [--activate]` | 注册自定义 HTML 主题 |
-| `theme <dev> --remove <id>` | 删除自定义主题（内置不可删） |
+| `theme <dev> --remove <id>` | 删除自定义主题（内置不可删；**删的若是正在用的那个，会自动退回 native**） |
 | `media <dev> <file> [--name n]` | 上传媒体到即将播放它的那台设备，返回 `absoluteUrl`（见「音频投送」） |
 | `media <dev> --list` / `--remove <id>` | 列出 / 删除设备上的媒体项 |
 | `forget <dev>` | 删除已存设备记录 |
 
-所有输出为 stdout JSON；错误 `{"ok":false,...}` 且退出码 1。401 提示先 auth，429 为密码锁 60s。
+所有输出为 stdout JSON；错误 `{"ok":false,...}` 且退出码 1。401 提示先 auth，429 为密码锁 60s
+（响应带 `retryAfterMs`，连错 5 次触发，**计数落盘，重启 app 也躲不掉**）。
+
+**注意 `param` 只剩四个键**：`rotationLock` / `idleDimSeconds` 从未真正实现，现在会被明确拒绝（400），
+别再指望用它们锁方向或控制息屏。
+
+### 投送结果：200 / 202 要分清
+
+- **200**：已上屏。
+- **202 `{ok:true, queued:true}`**：设备界面不在前台（用户退到桌面 / app 被清后台），
+  内容已排队，**设备回到前台会自动呈现**。这是正常路径，不要当成失败重试。
+  确认方式：`$A state <dev>` 的 `pending: true` 即表示还在队列里；让用户打开一次 app 或
+  `render --wake` 之后再查 `pending` 变 false、内容已上屏。
+
+### 直接写 HTTP 调用（不用 CLI）时必读
+
+用 CLI 就不用管这些；只有当你要自己 `curl`/`fetch` 时才需要：
+
+- token 只认 **`Authorization: Bearer <token>`**，`?token=` 已废弃（一律 401）。
+- 写操作必须带 **`Content-Type: application/json`**，否则 **415**；`POST /media` 是 raw body 例外，
+  但必须自带 `Content-Length`。
+- 带 `Origin` 头的跨站请求直接 **403**（反 CSRF）：只能从本机/agent 侧直连。
+- 未开放的能力返回 **403 `permission_denied`**，看 `/info` 的 `capabilities` 与 `open` 再动手。
+- `/history`、`/state`、`/events` 等在 auth 模式下都需要 token，别假设它有公网般的匿名读。
 
 ## 模板脚手架（templates/）
 
@@ -106,10 +142,13 @@ $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF
 - **选源以设备实测为准**：PC 上快的站电视可能反复缓冲；国内可达通常好于境外站，
   别把某个站当固定依赖，多个候选逐源试。
 - **没有合适外链时上传到播放设备本机**：`aiface media <播放设备> <文件>`，页面 `<audio src>` 用返回的
-  `absoluteUrl`，本机流式（Range/seek 均支持，单文件 ≤64MB）。
+  `absoluteUrl`，本机流式（Range/seek 均支持）。**单个文件 ≤32MB**（受 32MB 配额约束，
+  不是协议上写的 64MB）；超限会被 `Content-Length` 预检挡回 **413**，只能压小再传。
   **铁律：每台设备只和 agent 联络，不要把一台设备当另一台的"网盘"跨设备拉流。**
 - **低配电视存储紧张是常态**：app 有 32MB 环形配额 + 72h 自动清理，空间不足回 **507**——
   此时把音频压小再传（降码率/裁时长/80kbps 单声道），或 `--remove` 清旧项，不要改投别的设备。
+  配额满时**淘汰最旧的媒体项，本次刚传的不会被自己挤掉** —— 也就是说老链接会失效，
+  页面里引用 `/media/<id>` 前先 `$A media <dev> --list` 确认它还在。
 - 短音频（≤约 2.9MB，80kbps 单声道 ≈ 4-5 分钟）可直接 **data URI 嵌进页面**，零依赖零缓冲。
 
 ## 待机主题（首页）
@@ -126,6 +165,9 @@ $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF
 
 ## 安全与礼仪
 
-- 永不猜测/爆破密码；向用户索取，token 长期复用。
+- 永不猜测/爆破密码；向用户索取，token 长期复用（**同一设备最多保留 32 个活跃 token**，
+  超了会淘汰最早过期的旧 token —— 老 token 被挤掉就重新 `auth` 一次）。
 - 投送前若 `state` 显示 hasContent（正显示别人的内容），先确认再覆盖。
 - 提醒用户：真用之前把测试密码换掉（设置页可改，可"撤销所有 token"）。
+- 不该做的：不要试图绕过 403 权限，也不要把一台设备当另一台的"网盘"跨设备搬媒体 ——
+  能力矩阵与配额都是用户对该设备的明确授权。

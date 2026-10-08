@@ -3,6 +3,7 @@
 #   用法: ./scripts/verify-fixes.sh <ip[:port]> <token>
 #   A) P0-6 删除类端点权限门禁   B) P0-7 删除当前主题自动回退 native
 #   C) P0-1 媒体配额环形淘汰      D) 单文件超限拒绝   E) P1-14 密码加盐迁移
+#   F) token 封顶 32 时不该淘汰「最早签发」的长期会话
 #   需要：curl、python3、adb（且本机连着目标设备）
 set -u
 ADDR="${1:?用法: $0 <ip[:port]> <token>}"
@@ -153,6 +154,10 @@ python3 - "$TMP/aiface.legacy.xml" "$TMP/aiface.before-pwd.xml" "$LEGACY" <<'PY'
 import re,sys
 out,src,legacy=sys.argv[1],sys.argv[2],sys.argv[3]
 s=open(src,encoding='utf-8').read()
+# 若设备上的密码已迁移成加盐格式，必须先摘掉 pwd_salt/pwd_hash，
+# 否则 Prefs.checkPassword 只走加盐分支（见 Prefs.kt），注入的旧格式 pwd 会被无视
+for tag in ('pwd_salt','pwd_hash'):
+    s=re.sub(r'<string name="%s">[^<]*</string>\n?'%tag, '', s)
 s=re.sub(r'<string name="pwd">[^<]*</string>', '<string name="pwd">%s</string>'%legacy, s)
 if '<string name="pwd">' not in s:
     s=s.replace('</map>', '    <string name="pwd">%s</string>\n</map>'%legacy)
@@ -191,6 +196,74 @@ check "还原后 GET /state → 200（环境复原）" 200 "${A[@]}" "$BASE/stat
 adb shell run-as $PKG rm "$SP_DIR/aiface.orig.xml" "$SP_DIR/aiface.off.xml" \
   "$SP_DIR/aiface.legacy.xml" "$SP_DIR/aiface.before-pwd.xml" "$SP_DIR/auth.clean.xml" \
   "$SP_DIR/auth.orig.xml" "$SP_DIR/aiface.migrated.xml" >/dev/null 2>&1
+
+# ---------------- F) token 封顶不应挤掉长期在线的会话 ----------------
+# 复现场景：agent 昨天领了 token（还有 29 天才过期），今天有人反复调 /auth
+# （测试脚本、写坏的重连逻辑）把 32 个名额刷满。旧实现按「最快过期」淘汰，
+# 等价于按签发时间从老往新杀，长期在线的 agent 第一个掉线。
+echo "-- F) 反复 POST /auth 不应把长期在线的会话挤下线 --"
+sp_get aiface.xml > "$TMP/aiface.before-f.xml"
+sp_get aiface_auth.xml > "$TMP/auth.before-f.xml"
+# 灌一个已知密码 + 清空 token / 错误计数，保证这组用例能反复跑
+python3 - "$TMP/aiface.F.xml" "$TMP/aiface.before-f.xml" "$LEGACY" <<'PY'
+import re,sys
+out,src,legacy=sys.argv[1],sys.argv[2],sys.argv[3]
+s=open(src,encoding='utf-8').read()
+for tag in ('pwd_salt','pwd_hash'):  # 同上：先摘掉加盐格式，保证注入的 pwd 生效
+    s=re.sub(r'<string name="%s">[^<]*</string>\n?'%tag, '', s)
+s=re.sub(r'<string name="pwd">[^<]*</string>', '<string name="pwd">%s</string>'%legacy, s)
+if '<string name="pwd">' not in s:
+    s=s.replace('</map>', '    <string name="pwd">%s</string>\n</map>'%legacy)
+open(out,'w',encoding='utf-8',newline='\n').write(s)
+PY
+python3 - "$TMP/auth.before-f.xml" "$TMP/auth.F.xml" <<'PY'
+import re,sys
+src,out=sys.argv[1],sys.argv[2]
+s=open(src,encoding='utf-8').read()
+for tag in ('wrong','lockUntil','wrongSince'):
+    s=re.sub(r'<(int|long) name="%s"[^/]*/>'%tag, '', s)
+s=re.sub(r'<string name="tokens">[^<]*</string>\n?', '', s)
+open(out,'w',encoding='utf-8',newline='\n').write(s)
+PY
+sp_put aiface.xml "$TMP/aiface.F.xml"
+sp_put aiface_auth.xml "$TMP/auth.F.xml"
+restart_app
+check "POST /auth 领 token（模拟长期在线的 agent）" 200 "${J[@]}" \
+  -d "{\"password\":\"$TESTPWD\"}" "$BASE/auth"
+T0="$(BODY="$BODY" python3 -c "import json,os;print(json.load(open(os.environ['BODY'])).get('token',''))")"
+if [ -z "$T0" ]; then
+  echo "  取不到 token，F 组跳过"
+else
+  # 连打 40 次：远超 MAX_ACTIVE_TOKENS=32
+  i=0; while [ $i -lt 40 ]; do
+    curl -s -m 20 -o /dev/null "${J[@]}" -d "{\"password\":\"$TESTPWD\"}" "$BASE/auth"; i=$((i+1))
+  done
+  check "刷新 40 次 /auth 后老 token 仍可用" 200 -H "Authorization: Bearer $T0" "$BASE/state"
+  sleep 1
+  sp_get aiface_auth.xml > "$TMP/auth.F.after.xml"
+  if tr ';' '\n' < "$TMP/auth.F.after.xml" | grep -qE '^[0-9a-f]{32}:[0-9]+:[0-9]+'; then
+    PASS=$((PASS+1)); printf '  \033[32m✓\033[0m %-54s ok\n' "已落盘为新格式 <token>:<过期>:<签发>"
+  else
+    FAIL=$((FAIL+1)); printf '  \033[31m✗\033[0m %-54s\n' "已落盘为新格式 <token>:<过期>:<签发>"
+  fi
+  ACT="$(python3 - "$TMP/auth.F.after.xml" <<'PY'
+import sys,re,time
+s=open(sys.argv[1],encoding='utf-8').read()
+m=re.search(r'<string name="tokens">([^<]*)</string>', s)
+now=int(time.time()*1000)
+print(sum(1 for e in (m.group(1).split(';') if m else []) if e and int(e.split(':')[1])>now))
+PY
+)"
+  if [ "$ACT" -le 32 ]; then
+    PASS=$((PASS+1)); printf '  \033[32m✓\033[0m %-54s %s 个\n' "活跃 token 数不超过上限 32" "$ACT"
+  else
+    FAIL=$((FAIL+1)); printf '  \033[31m✗\033[0m %-54s %s 个\n' "活跃 token 数不超过上限 32" "$ACT"
+  fi
+fi
+sp_put aiface.xml "$TMP/aiface.before-f.xml"
+sp_put aiface_auth.xml "$TMP/auth.before-f.xml"
+restart_app
+check "F 组还原后 GET /state → 200" 200 "${A[@]}" "$BASE/state"
 
 echo
 echo "通过 $PASS / 失败 $FAIL"

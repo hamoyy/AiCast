@@ -11,3 +11,6 @@ captures/
 *.aab
 *.keystore
 .kotlin/
+
+# 投屏测试实拍（不入库）
+.render-test/

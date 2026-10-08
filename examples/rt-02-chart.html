@@ -1,0 +1,146 @@
+<!doctype html>
+<!-- 投屏测试 02：内联 SVG 数据看板
+     测什么：手写 SVG 折线/面积/柱/环图、stroke-dasharray 描线动画、tabular-nums 对齐、
+             纯离线无外链（不依赖 CDN 也能画完图） -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>专注周报</title>
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#0B1020; --card:#151B31; --line:#242C4A; --ink:#E8ECF8; --sub:#8B96B8;
+    --c1:#4C8DFF; --c2:#31D0AA; --c3:#FFB03A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    min-height:100vh;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:16px;
+    padding-top:max(16px, calc(env(safe-area-inset-top,0px) + 6px));
+    padding-bottom:max(16px, calc(env(safe-area-inset-bottom,0px) + 6px));
+  }
+  .top{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}
+  h1{font-size:20px;font-weight:750;letter-spacing:-.01em}
+  .sub{font-size:11.5px;color:var(--sub);margin-top:3px}
+  .pill{font-size:11px;color:var(--c2);background:rgba(49,208,170,.13);border:1px solid rgba(49,208,170,.3);
+        padding:4px 10px;border-radius:99px}
+
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:13px 12px}
+  .kpi i{font-style:normal;font-size:10.5px;color:var(--sub);letter-spacing:.05em}
+  .kpi b{display:block;font-size:24px;font-weight:750;margin:5px 0 2px;font-variant-numeric:tabular-nums}
+  .kpi b em{font-size:11px;font-style:normal;color:var(--sub);font-weight:500;margin-left:2px}
+  .delta{font-size:10.5px;font-variant-numeric:tabular-nums}
+  .up{color:var(--c2)} .down{color:#FF7A7A}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px 14px 12px;margin-bottom:12px}
+  .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .pt{font-size:13px;font-weight:650}
+  .pl{font-size:10.5px;color:var(--sub)}
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .gline{fill:none;stroke:url(#ag);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;
+         stroke-dasharray:600;stroke-dashoffset:600;animation:draw 1.5s .2s cubic-bezier(.35,.9,.3,1) forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .area{opacity:0;animation:fade .8s 1s forwards}
+  @keyframes fade{to{opacity:1}}
+  .dot{opacity:0;animation:fade .4s forwards}
+  .lbl{font-size:9.5px;fill:var(--sub)}
+  .val{font-size:10px;fill:var(--ink);font-variant-numeric:tabular-nums}
+  .bar{fill:url(#bg2);rx:3}
+  .ring-bg{fill:none;stroke:#242C4A;stroke-width:9}
+  .ring-fg{fill:none;stroke:var(--c2);stroke-width:9;stroke-linecap:round;
+           stroke-dasharray:245;stroke-dashoffset:245;animation:ring 1.3s .3s cubic-bezier(.3,.9,.3,1) forwards}
+  @keyframes ring{to{stroke-dashoffset:53}}
+  .ring-num{font-size:22px;font-weight:750;fill:var(--ink);text-anchor:middle;font-variant-numeric:tabular-nums}
+  .ring-cap{font-size:9.5px;fill:var(--sub);text-anchor:middle}
+</style>
+</head>
+<body>
+  <div class="top">
+    <div><h1>专注周报</h1><div class="sub">10.02 — 10.08 · 共 7 天</div></div>
+    <div class="pill">环比 +18%</div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><i>总时长</i><b>26.4<em>h</em></b><span class="delta up">▲ 18%</span></div>
+    <div class="kpi"><i>日均</i><b>3.8<em>h</em></b><span class="delta up">▲ 0.6h</span></div>
+    <div class="kpi"><i>中断</i><b>9<em>次</em></b><span class="delta down">▼ 4 次</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><div class="pt">每日专注时长</div><div class="pl">单位：小时</div></div>
+    <svg viewBox="0 0 320 150" role="img" aria-label="每日专注时长折线图">
+      <defs>
+        <linearGradient id="ag" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#31D0AA"/><stop offset="1" stop-color="#4C8DFF"/>
+        </linearGradient>
+        <linearGradient id="af" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#4C8DFF" stop-opacity=".34"/>
+          <stop offset="1" stop-color="#4C8DFF" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <g stroke="#242C4A" stroke-width="1">
+        <line x1="0" y1="30" x2="320" y2="30"/><line x1="0" y1="60" x2="320" y2="60"/>
+        <line x1="0" y1="90" x2="320" y2="90"/><line x1="0" y1="120" x2="320" y2="120"/>
+      </g>
+      <g><text class="lbl" x="0" y="14">6h</text><text class="lbl" x="0" y="44">4h</text>
+         <text class="lbl" x="0" y="74">2h</text><text class="lbl" x="0" y="104">1h</text></g>
+      <!-- 数值 2.1 3.4 4.6 3.0 5.2 4.1 3.9 → y = 120 - v*15 -->
+      <polygon class="area" points="24,88 70,69 116,51 162,75 208,42 254,58 300,61 300,120 24,120" fill="url(#af)"/>
+      <polyline class="gline" points="24,88 70,69 116,51 162,75 208,42 254,58 300,61"/>
+      <g class="dot"><circle cx="70" cy="69" r="3" fill="#0B1020" stroke="#4C8DFF" stroke-width="2" style="animation-delay:1.1s"/></g>
+      <g class="dot"><circle cx="162" cy="75" r="3" fill="#0B1020" stroke="#4C8DFF" stroke-width="2" style="animation-delay:1.25s"/></g>
+      <g class="dot" style="animation-delay:1.4s"><circle cx="208" cy="42" r="4" fill="#fff" stroke="#4C8DFF" stroke-width="2.4"/>
+        <text class="val" x="208" y="30" text-anchor="middle">5.2</text></g>
+      <g class="dot" style="animation-delay:1.5s"><circle cx="300" cy="61" r="3" fill="#0B1020" stroke="#4C8DFF" stroke-width="2"/></g>
+      <g class="lbl" text-anchor="middle">
+        <text x="24" y="137">二</text><text x="70" y="137">三</text><text x="116" y="137">四</text>
+        <text x="162" y="137">五</text><text x="208" y="137">六</text><text x="254" y="137">日</text><text x="300" y="137">一</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><div class="pt">任务分布</div><div class="pl">按类别统计完成数</div></div>
+    <svg viewBox="0 0 320 116" role="img" aria-label="任务分布柱状图">
+      <defs><linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#31D0AA"/><stop offset="1" stop-color="#31D0AA" stop-opacity=".35"/>
+      </linearGradient></defs>
+      <line x1="0" y1="86" x2="320" y2="86" stroke="#242C4A"/>
+      <!-- 12,18,9,15,7,11,6 → h = v*5.5 -->
+      <rect class="bar" x="8"  y="20" width="30" height="66"><title>编码 12</title></rect>
+      <rect class="bar" x="52" y="-14" width="30" height="100"><title>评审 18</title></rect>
+      <rect class="bar" x="96" y="36.5" width="30" height="49.5"><title>文档 9</title></rect>
+      <rect class="bar" x="140" y="3.5" width="30" height="82.5"><title>沟通 15</title></rect>
+      <rect class="bar" x="184" y="47.5" width="30" height="38.5"><title>测试 7</title></rect>
+      <rect class="bar" x="228" y="25.5" width="30" height="60.5"><title>排障 11</title></rect>
+      <rect class="bar" x="272" y="53" width="30" height="33"><title>杂项 6</title></rect>
+      <g class="lbl" text-anchor="middle">
+        <text x="23" y="103">编码</text><text x="67" y="103">评审</text><text x="111" y="103">文档</text>
+        <text x="155" y="103">沟通</text><text x="199" y="103">测试</text><text x="243" y="103">排障</text><text x="287" y="103">杂项</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><div class="pt">周目标完成度</div><div class="pl">目标 30h</div></div>
+    <svg viewBox="0 0 320 96" role="img" aria-label="周目标完成度环形图">
+      <g transform="translate(46,48)">
+        <circle class="ring-bg" r="39"/>
+        <circle class="ring-fg" r="39" transform="rotate(-90)"/>
+        <text class="ring-num" y="4">88%</text>
+        <text class="ring-cap" y="20">26.4 / 30h</text>
+      </g>
+      <g transform="translate(112,22)">
+        <text x="0" y="0" font-size="11.5" fill="#E8ECF8" font-weight="600">剩余 3.6h</text>
+        <text x="0" y="18" font-size="10.5" fill="#8B96B8">按当前节奏，周五可提前达成</text>
+        <circle cx="4" cy="38" r="4" fill="#31D0AA"/><text x="14" y="42" font-size="10.5" fill="#8B96B8">已完成</text>
+        <circle cx="76" cy="38" r="4" fill="#242C4A"/><text x="86" y="42" font-size="10.5" fill="#8B96B8">剩余</text>
+      </g>
+    </svg>
+  </div>
+</body>
+</html>

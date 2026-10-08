@@ -1,0 +1,130 @@
+<!doctype html>
+<!-- 投屏测试 04：Canvas 实时动画 + 触摸交互
+     测什么：requestAnimationFrame 持续渲染的实际帧率（右上角 FPS 实时显示）、
+             devicePixelRatio 下的高清适配、touch 输入、长时间运行不卡死 -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>粒子引力场</title>
+<style>
+  :root{ color-scheme: dark; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{background:#05070F;color:#E8EEFF;
+       font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;user-select:none}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  .hud{position:fixed;left:0;right:0;top:0;padding:14px;
+       padding-top:max(14px, calc(env(safe-area-inset-top,0px) + 6px));
+       display:flex;align-items:flex-start;justify-content:space-between;pointer-events:none}
+  .tt{font-size:11px;letter-spacing:.22em;color:#6C7B9E}
+  .tt b{display:block;font-size:15px;letter-spacing:0;color:#E8EEFF;font-weight:700;margin-top:3px}
+  .fps{font-size:11px;color:#6C7B9E;text-align:right;font-variant-numeric:tabular-nums;line-height:1.7}
+  .fps b{font-size:19px;color:#4CC2A5;font-weight:750}
+  .tip{position:fixed;left:0;right:0;bottom:0;text-align:center;font-size:11px;color:#5A6888;
+       padding-bottom:max(16px, calc(env(safe-area-inset-bottom,0px) + 8px));pointer-events:none}
+</style>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+  <div class="hud">
+    <div class="tt">PARTICLE FIELD<b id="num">0 个粒子</b></div>
+    <div class="fps"><b id="f">60</b> FPS<br><span id="ms">0.0 ms/帧</span></div>
+  </div>
+  <div class="tip">拖动 / 长按屏幕会吸引粒子</div>
+
+<script>
+(function(){
+  var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  var W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  function fit(){
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  var N = 78, P = [];
+  for (var i = 0; i < N; i++){
+    P.push({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - .5) * .7, vy: (Math.random() - .5) * .7,
+      r: 1.6 + Math.random() * 3.2,
+      h: 190 + Math.random() * 130
+    });
+  }
+  document.getElementById('num').textContent = N + ' 个粒子';
+
+  var ptr = null;
+  function pt(e){
+    var t = e.touches && e.touches[0] ? e.touches[0] : e;
+    var b = cv.getBoundingClientRect();
+    ptr = { x: t.clientX - b.left, y: t.clientY - b.top };
+  }
+  cv.addEventListener('touchstart', pt, {passive:true});
+  cv.addEventListener('touchmove',  pt, {passive:true});
+  cv.addEventListener('touchend',   function(){ ptr = null; }, {passive:true});
+  cv.addEventListener('mousedown',  pt);
+  cv.addEventListener('mousemove',  function(e){ if (ptr) pt(e); });
+  cv.addEventListener('mouseup',    function(){ ptr = null; });
+
+  var last = performance.now(), acc = 0, frames = 0, fpsT = last;
+  function loop(now){
+    var dt = Math.min((now - last) / 16.67, 3); last = now;
+
+    // 拖尾：半透明底色覆盖，而不是 clearRect
+    ctx.fillStyle = 'rgba(5,7,15,.22)';
+    ctx.fillRect(0, 0, W, H);
+
+    for (var i = 0; i < N; i++){
+      var p = P[i];
+      if (ptr){
+        var dx = ptr.x - p.x, dy = ptr.y - p.y, d2 = dx*dx + dy*dy;
+        if (d2 > 4 && d2 < 90000){
+          var f = 26 / d2, d = Math.sqrt(d2);
+          p.vx += dx / d * f * 9 * dt; p.vy += dy / d * f * 9 * dt;
+        }
+      }
+      p.vx *= .992; p.vy *= .992;
+      var sp = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+      if (sp > 4.2){ p.vx = p.vx / sp * 4.2; p.vy = p.vy / sp * 4.2; }
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      // 环绕边界，粒子不会跑丢
+      if (p.x < -10) p.x = W + 10; else if (p.x > W + 10) p.x = -10;
+      if (p.y < -10) p.y = H + 10; else if (p.y > H + 10) p.y = -10;
+
+      var g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 5);
+      g.addColorStop(0, 'hsla(' + p.h + ',95%,72%,.95)');
+      g.addColorStop(.4, 'hsla(' + p.h + ',92%,60%,.28)');
+      g.addColorStop(1, 'hsla(' + p.h + ',92%,55%,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 5, 0, 6.2832); ctx.fill();
+    }
+
+    // 邻近连线：O(n²)，n=78 可接受
+    ctx.lineWidth = .6;
+    for (var a = 0; a < N; a++){
+      for (var b = a + 1; b < N; b++){
+        var q = P[a], r2 = P[b];
+        var ex = q.x - r2.x, ey = q.y - r2.y, l2 = ex*ex + ey*ey;
+        if (l2 < 13000){
+          ctx.strokeStyle = 'hsla(210,80%,68%,' + (0.16 * (1 - l2 / 13000)) + ')';
+          ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(r2.x, r2.y); ctx.stroke();
+        }
+      }
+    }
+
+    frames++; acc += now - fpsT;
+    if (now - fpsT > 500){
+      document.getElementById('f').textContent = Math.round(frames * 1000 / (now - fpsT));
+      document.getElementById('ms').textContent = ((now - fpsT) / frames).toFixed(1) + ' ms/帧';
+      frames = 0; fpsT = now;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -45,8 +45,9 @@ function resolveDev(key) {
   const s = loadStore();
   const k = key.toLowerCase();
   for (const [id, d] of Object.entries(s.devices)) {
-    if (id.toLowerCase() === k || (d.name || '').toLowerCase() === k || d.address.toLowerCase() === k)
-      return { id, ...d };
+  if (id.toLowerCase() === k || (d.name || '').toLowerCase() === k ||
+      (typeof d.address === 'string' && d.address.toLowerCase() === k))
+    return { id, ...d };
   }
   if (/^[\w.-]+(:\d+)?$/.test(key)) return { id: key, address: key.includes(':') ? key : key + ':43210' };
   die(`未知设备 "${key}"，先执行 aiface discover 或 aiface auth <ip:port> --password …`);
@@ -59,7 +60,11 @@ async function api(dev, method, p, body, opts = {}) {
   const token = dev.token && dev.tokenExp > Date.now() ? dev.token : null;
   if (token) headers['Authorization'] = 'Bearer ' + token;
   let payload;
-  if (body !== undefined) { headers['Content-Type'] = 'application/json'; payload = JSON.stringify(body); }
+  // opts.rawBody：body 已是 JSON 字符串（如 message），不要再 stringify 一次
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';   // server 侧强制要求，缺了会 415
+    payload = opts.rawBody ? String(body) : JSON.stringify(body);
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || 15000);
   let res, text;
@@ -70,6 +75,11 @@ async function api(dev, method, p, body, opts = {}) {
   let json; try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
   if (res.status === 401) {
     die(`设备 ${dev.id} 需要鉴权：先运行 aiface auth ${dev.address} --password <用户设置的密码>`, json);
+  }
+  // 429：防爆破锁定（计数已落盘，进程重启不会清零）
+  if (res.status === 429) {
+    const sec = json && json.retryAfterMs ? Math.ceil(json.retryAfterMs / 1000) : 60;
+    die(`设备 ${dev.id} 已锁定：${json && json.message ? json.message : '密码错误次数过多'}（${sec} 秒后自动解锁）`, json);
   }
   if (!res.ok && json.ok !== false) die(`HTTP ${res.status}`, json);
   return json;
@@ -249,13 +259,10 @@ async function cmdMessage(key, args) {
   const dev = resolveDev(key);
   const data = args['data-file'] ? fs.readFileSync(args['data-file'], 'utf8') : args.data;
   if (!data) die('message 需要 --data 或 --data-file');
-  JSON.parse(data); // 校验
-  const r = await fetch(`http://${dev.address}/message`, {
-    method: 'POST',
-    headers: headersFor(dev, { 'Content-Type': 'application/json' }),
-    body: data,
-  });
-  console.log(JSON.stringify(await r.json(), null, 1));
+  JSON.parse(data); // 本地先校验，省一次往返
+  // 走 api()：统一 401/415/超时处理（以前自己 fetch，非 JSON 响应会直接抛）
+  const r = await api(dev, 'POST', '/message', data, { rawBody: true, timeoutMs: 15000 });
+  console.log(JSON.stringify(r, null, 1));
 }
 async function cmdEvents(key, args) {
   const dev = resolveDev(key);
@@ -263,11 +270,16 @@ async function cmdEvents(key, args) {
   const timeout = parseInt(args.timeout || '25', 10);
   const follow = !!args.follow;
   for (; ;) {
-    const r = await api(dev, 'GET', `/events?since=${since}&timeout=${follow ? Math.min(timeout, 30) : timeout}`, undefined,
-      { timeoutMs: (timeout + 10) * 1000 });
-    const evs = Array.isArray(r) ? r : [];
+    const wait = follow ? Math.min(timeout, 30) : timeout;
+    const r = await api(dev, 'GET', `/events?since=${since}&timeout=${wait}`, undefined,
+      { timeoutMs: (wait + 10) * 1000 });
+    // 新结构：{ ok, lastSeq, reset, events[] }（老设备的纯数组也兼容）
+    const obj = r && !Array.isArray(r);
+    const evs = obj ? (r.events || []) : (Array.isArray(r) ? r : []);
+    if (obj && r.reset) since = 0;   // 设备缓冲已重置，从头接着拉
     for (const e of evs) { since = Math.max(since, e.seq); console.log(JSON.stringify(e)); }
     if (!follow) { if (!evs.length) console.log(JSON.stringify({ ok: true, events: [], since })); break; }
+    await new Promise((res) => setTimeout(res, 100)); // 轻微节流，避免空转打爆设备
   }
 }
 async function cmdState(key) {

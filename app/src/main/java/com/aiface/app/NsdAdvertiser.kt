@@ -27,6 +27,14 @@ object NsdAdvertiser {
             .postDelayed({ advertise(ctx) }, 800)
     }
 
+    /** 服务下线时注销广播（此前从不注销，长期残留） */
+    fun stop() {
+        val l = listener ?: return
+        runCatching { nsd?.unregisterService(l) }
+        listener = null
+        registered = false
+    }
+
     fun advertise(ctx: Context) {
         if (registered) return
         val mgr = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -34,7 +42,8 @@ object NsdAdvertiser {
         val info = NsdServiceInfo().apply {
             serviceName = Prefs.name.ifBlank { "aiface" }
             serviceType = SERVICE_TYPE
-            port = Server.PORT
+            // 端口可能因被占用而顺延，广播实际监听端口（P0-3）
+            port = Server.port
             // setAttribute(String,String) 需 API 33+；低版本仅靠 serviceName 携带名称
             if (Build.VERSION.SDK_INT >= 33) {
                 setAttribute("deviceId", Prefs.deviceId)

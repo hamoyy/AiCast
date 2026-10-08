@@ -41,6 +41,12 @@ class MainActivity : ComponentActivity() {
     private val themeVersion = mutableStateOf(0)
     private var webView: WebView? = null
     private var homeControls: View? = null   // HTML 主题下浮层的"设置/历史"入口（原生主题隐藏）
+    // 已载入的家模式主题 id：避免每次开关设置页都把整屏主题重载一遍（丢状态 + 刷屏 system.page）
+    private var homeLoadedTheme: String? = null
+
+    private val requestNotificationPerm = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { /* 没授权也能跑，只是看不到常驻通知 */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,7 +127,13 @@ class MainActivity : ComponentActivity() {
         syncLayers()
 
         HomeRefresh.request = { themeVersion.value++; syncLayers() }
-        CommandBus.onCleared = { runOnUiThread { hasContent.value = false; syncLayers() } }
+        CommandBus.onCleared = {
+            runOnUiThread { hasContent.value = false; homeLoadedTheme = null; syncLayers() }
+        }
+
+        Ui.applyPersistedBrightness(this)   // 冷启动回放亮度，否则界面与 /param 报告不一致
+        ensureNotificationPermission()
+        CommandBus.flushPending()           // 把界面不在期间排队的投送补上
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -154,7 +166,8 @@ class MainActivity : ComponentActivity() {
             if (htmlHome && !hasContent.value && !overlay) View.VISIBLE else View.GONE
         if (show) {
             if (hasContent.value) {
-                // 投送内容已由 renderHtml/loadUrl 载入，直接聚焦收键
+                // 投送内容已由 renderHtml/loadUrl 载入，直接聚焦收键；主题需下次重载
+                homeLoadedTheme = null
                 webView?.requestFocus(View.FOCUS_DOWN)
             } else {
                 showHomeTheme()
@@ -162,9 +175,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Android 13+：前台服务的常驻通知必须被授权才可见（README 里说的"点允许"，代码之前没申请） */
+    private fun ensureNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
+        window.decorView.post { runCatching { requestNotificationPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS) } }
+    }
+
     /** 把当前选中的 HTML 主题作为待机首页载入 WebView（家模式，不计入投送内容） */
     private fun showHomeTheme() {
-        Themes.htmlFor(Prefs.theme)?.let { CommandBus.showHome(it) }
+        val id = Prefs.theme
+        // 同一个主题已经在 WebView 里了就别再重载：否则开关设置页/历史页都会把整屏重刷一遍
+        if (homeLoadedTheme == id) {
+            webView?.requestFocus(View.FOCUS_DOWN)
+            return
+        }
+        Themes.htmlFor(id)?.let { CommandBus.showHome(it); homeLoadedTheme = id }
         webView?.requestFocus(View.FOCUS_DOWN)
     }
 
@@ -263,12 +291,64 @@ class MainActivity : ComponentActivity() {
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             addJavascriptInterface(JsBridge(), "AndroidAiface")
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                // 没有 WebChromeClient 时 agent 页面里的 console/alert 全静默丢失，排障全靠猜
+                override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                    android.util.Log.i(
+                        "aiface-web",
+                        "[${m.messageLevel()}] ${m.message()} @${m.sourceId()}:${m.lineNumber()}"
+                    )
+                    return false
+                }
+            }
             webViewClient = object : android.webkit.WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String?) {
+                    if (url == "about:blank") return  // 清屏，不算一次页面事件
                     injectSdk(view)
-                    if (CommandBus.hasContent()) { hasContent.value = true; syncLayers() }
+                    val isContent = CommandBus.hasContent()
+                    if (isContent) { hasContent.value = true; syncLayers() }
                     view.requestFocus(View.FOCUS_DOWN)
-                    CommandBus.emit("system.page", """{"url":${JSONObject.quote(url ?: "")}}""")
+                    // 主题重载不再刷 system.page 事件；只有真实投送才记
+                    if (isContent) CommandBus.emit("system.page", """{"url":${JSONObject.quote(url ?: "")}}""")
+                }
+
+                // 以前 URL 投送失败屏幕一片空白、agent 毫不知情：现在发 page.error 事件
+                override fun onReceivedError(
+                    view: WebView, request: android.webkit.WebResourceRequest,
+                    error: android.webkit.WebResourceError
+                ) {
+                    if (!request.isForMainFrame) return
+                    CommandBus.emit(
+                        "page.error",
+                        JSONObject()
+                            .put("url", request.url?.toString() ?: "")
+                            .put("code", runCatching { error.errorCode }.getOrDefault(-1))
+                            .put("message", runCatching { error.description?.toString() }.getOrNull() ?: "加载失败")
+                            .toString()
+                    )
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView, request: android.webkit.WebResourceRequest,
+                    errorResponse: android.webkit.WebResourceResponse
+                ) {
+                    if (!request.isForMainFrame) return
+                    CommandBus.emit(
+                        "page.error",
+                        JSONObject()
+                            .put("url", request.url?.toString() ?: "")
+                            .put("code", errorResponse.statusCode)
+                            .put("message", "HTTP ${errorResponse.statusCode}")
+                            .toString()
+                    )
+                }
+
+                // 挡掉 javascript:/file:/content: 等非网页 scheme（渲染 url 已在 server 侧校验，这里是双保险）
+                override fun shouldOverrideUrlLoading(
+                    view: WebView, request: android.webkit.WebResourceRequest
+                ): Boolean {
+                    val s = request.url?.scheme ?: return false
+                    return !s.equals("http", true) && !s.equals("https", true)
                 }
             }
             App.webView = this

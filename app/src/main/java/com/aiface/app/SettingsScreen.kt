@@ -223,7 +223,7 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
 
         Section("本机") {
             Info("ID", Prefs.deviceId)
-            Info("地址", "${Net.localIp()}:${Server.PORT}")
+            Info("地址", "${Net.localIp()}:${Server.port}")
             Info("形态", "${DeviceInfo.deviceClass()} · 触摸:${if (DeviceInfo.isTouch()) "是" else "否"}")
         }
 

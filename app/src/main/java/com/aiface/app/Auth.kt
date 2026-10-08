@@ -5,23 +5,23 @@ import java.security.SecureRandom
 
 /**
  * token 会话（§4 auth 模式）：密码 → 长期 token（30 天），支持多 agent 各自持有；
- * 防爆破：连错 5 次锁 60 秒；可在设置页全部吊销。
+ * 防爆破：连错 5 次锁 60 秒，计数**落盘**（进程重启不会清零，P1-14）；可在设置页全部吊销。
  */
 object Auth {
 
     private const val TTL = 30L * 24 * 3600 * 1000
     private const val MAX_WRONG = 5
     private const val LOCK_MS = 60_000L
+    private const val WRONG_WINDOW_MS = 10 * 60 * 1000L
+    private const val MAX_ACTIVE_TOKENS = 32
 
-    private val sp get() = App.ctx.getSharedPreferences("aiface_auth", Context.MODE_PRIVATE)
+    private fun sp() = App.ctx.getSharedPreferences("aiface_auth", Context.MODE_PRIVATE)
 
-    @Volatile private var wrong = 0
-    @Volatile private var lockUntil = 0L
     @Volatile private var cache: Map<String, Long>? = null
 
     private fun tokens(): MutableMap<String, Long> {
         cache?.let { return it.toMutableMap() }
-        val raw = sp.getString("tokens", "") ?: ""
+        val raw = sp().getString("tokens", "") ?: ""
         val m = raw.split(";").mapNotNull {
             val p = it.split(":")
             if (p.size == 2) p[0] to (p[1].toLongOrNull() ?: 0L) else null
@@ -32,23 +32,46 @@ object Auth {
 
     private fun save(m: Map<String, Long>) {
         cache = m
-        sp.edit().putString("tokens", m.entries.joinToString(";") { "${it.key}:${it.value}" }).apply()
+        sp().edit().putString("tokens", m.entries.joinToString(";") { "${it.key}:${it.value}" }).apply()
     }
 
-    fun locked(): Boolean = System.currentTimeMillis() < lockUntil
+    fun locked(): Boolean = System.currentTimeMillis() < sp().getLong("lockUntil", 0L)
 
+    fun lockRemainingMs(): Long = (sp().getLong("lockUntil", 0L) - System.currentTimeMillis()).coerceAtLeast(0L)
+
+    /** 返回 true 表示本次触发锁定 */
     fun noteWrongPassword(): Boolean {
+        val now = System.currentTimeMillis()
+        val p = sp().edit()
+        val since = sp().getLong("wrongSince", 0L)
+        var wrong = sp().getInt("wrong", 0)
+        if (now - since > WRONG_WINDOW_MS) {
+            wrong = 0
+            p.putLong("wrongSince", now)
+        }
         wrong++
-        if (wrong >= MAX_WRONG) { lockUntil = System.currentTimeMillis() + LOCK_MS; wrong = 0; return true }
-        return false
+        return if (wrong >= MAX_WRONG) {
+            p.putInt("wrong", 0).putLong("lockUntil", now + LOCK_MS).apply()
+            true
+        } else {
+            p.putInt("wrong", wrong).apply()
+            false
+        }
     }
 
-    fun noteSuccess() { wrong = 0; lockUntil = 0L }
+    fun noteSuccess() { sp().edit().putInt("wrong", 0).putLong("lockUntil", 0L).apply() }
 
     /** 密码换 token：同一密码重复申请返回新 token（旧 token 仍有效直到过期/吊销） */
     fun issue(): Pair<String, Long> {
         val now = System.currentTimeMillis()
         val m = tokens().filterValues { it > now }.toMutableMap()
+        // 活跃 token 数量封顶：超了丢掉最快过期的那批，避免无上限增长（P1-14）
+        if (m.size >= MAX_ACTIVE_TOKENS) {
+            m.entries.sortedBy { it.value }
+                .take(m.size - MAX_ACTIVE_TOKENS + 1)
+                .map { it.key }
+                .forEach { m.remove(it) }
+        }
         val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val t = bytes.joinToString("") { "%02x".format(it) }
         m[t] = now + TTL

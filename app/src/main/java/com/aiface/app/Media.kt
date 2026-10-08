@@ -30,8 +30,14 @@ object Media {
 
     private const val QUOTA_BYTES = 32L * 1024 * 1024      // 环形上限 32MB
     private const val TTL_MS = 72L * 60 * 60 * 1000        // 72 小时过期
-    const val MAX_SINGLE_BYTES = 64L * 1024 * 1024         // 单文件硬上限 64MB
+    const val MAX_SINGLE_BYTES = 64L * 1024 * 1024         // 协议声明的单文件硬上限 64MB
     private const val MIN_FREE = 64L * 1024 * 1024         // 存完后系统盘至少留 64MB
+
+    /**
+     * 实际接受的单文件上限：取「协议上限」与「配额」的较小值。
+     * 否则一个 > 配额的文件会被配额循环立刻淘汰掉，上传返回成功却立刻 404（P0-1）。
+     */
+    fun effectiveMaxSingle(): Long = minOf(MAX_SINGLE_BYTES, QUOTA_BYTES)
 
     private val dir get() = File(App.ctx.filesDir, "media").apply { if (!exists()) mkdirs() }
     private val indexFile get() = File(dir, "index.json")
@@ -126,17 +132,28 @@ object Media {
         return true
     }
 
-    /** TTL 过期 + 配额环形淘汰（丢最旧） */
+    /** 配额 + TTL 淘汰。**新写入的那一项永不自淘汰**（否则刚上传就被自己删掉，P0-1） */
     private fun enforceQuota(cur: MutableList<Meta>) {
         val now = System.currentTimeMillis()
-        cur.filter { now - it.ts > TTL_MS }.forEach { try { fileFor(it).delete() } catch (e: Exception) {} }
-        cur.removeAll { now - it.ts > TTL_MS }
+        val expired = cur.filter { now - it.ts > TTL_MS }
+        expired.forEach { try { fileFor(it).delete() } catch (e: Exception) {} }
+        if (expired.isNotEmpty()) cur.removeAll { now - it.ts > TTL_MS }
+
         var total = cur.sumOf { it.size }
-        while (total > QUOTA_BYTES && cur.isNotEmpty()) {
+        // 至少保留最新一项：单文件超过配额也先收下（上传预检已用 effectiveMaxSingle 兜住）
+        while (total > QUOTA_BYTES && cur.size > 1) {
             val oldest = cur.removeAt(cur.size - 1)
             total -= oldest.size
             try { fileFor(oldest).delete() } catch (e: Exception) {}
         }
+    }
+
+    /** 启动时理一次过期数据，否则长期不上传就会一直堆着（P1-19） */
+    fun prune() {
+        val cur = load().toMutableList()
+        val before = cur.size
+        enforceQuota(cur)
+        if (cur.size != before) { cache = cur; persist() }
     }
 
     fun listJson(): String {

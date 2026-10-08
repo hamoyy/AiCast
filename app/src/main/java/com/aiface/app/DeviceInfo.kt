@@ -121,19 +121,31 @@ object DeviceInfo {
                         "screenOn" to JsonPrimitive(isScreenOn())
                     )
                 ),
-                "capabilities" to JsonArray(
-                    listOf("render", "message", "param", "screen", "tts", "volume", "vibrate", "notify", "clipboard", "launchApp")
-                        .map { JsonPrimitive(it) }
-                ),
+                "capabilities" to JsonArray(capabilities().map { JsonPrimitive(it) }),
                 "app" to JsonObject(
                     mapOf(
                         "version" to JsonPrimitive(appVersion()),
-                        "port" to JsonPrimitive(Server.PORT),
+                        "port" to JsonPrimitive(Server.port),
                         "evalEnabled" to JsonPrimitive(Prefs.evalEnabled)
                     )
                 )
             )
         )
+    }
+
+    /**
+     * **真实可用**的能力清单 = 已实现的端点 × 逐项权限开关。
+     * 以前把 tts/notify/clipboard/launchApp 等没实现的都写死上报，
+     * agent 照着画像去调必然 404（P1-16）。
+     */
+    fun capabilities(): List<String> {
+        val list = mutableListOf<String>()
+        if (Prefs.isOpen("render")) list += listOf("render", "themes", "media")
+        if (Prefs.isOpen("message")) list += "message"
+        if (Prefs.isOpen("param")) list += listOf("param", "theme", "volume", "brightness", "fontScale")
+        list += listOf("state", "events", "history")   // 只读能力
+        if (Prefs.evalEnabled) list += "eval"
+        return list.distinct()
     }
 
     private fun metrics(): DisplayMetrics {

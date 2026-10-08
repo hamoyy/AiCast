@@ -7,8 +7,12 @@ import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * server ↔ WebView 的中央总线：渲染指令、事件环形缓冲、long-poll 拉取。
@@ -21,10 +25,15 @@ object CommandBus {
     private var currentUrl: String? = null
     private var lastHtml: String? = null
 
+    /** 界面还没起来时的投送排队目标（P0-4：避免 /render 假成功） */
+    @Volatile var pendingHtml: String? = null
+        private set
+
     fun hasContent(): Boolean = currentUrl != null || lastHtml != null
+    fun hasPending(): Boolean = pendingHtml != null
 
     fun clear() {
-        lastHtml = null; currentUrl = null
+        lastHtml = null; currentUrl = null; pendingHtml = null
         // WebView 将被隐藏销毁内容，下次 render 重新载入
         main.post { App.webView?.loadUrl("about:blank") }
         onCleared?.invoke()
@@ -32,11 +41,35 @@ object CommandBus {
 
     var onCleared: (() -> Unit)? = null
 
-    fun renderHtml(html: String) {
+    /**
+     * 投送 HTML。返回是否上了屏：
+     * - true：已投给 WebView；
+     * - false：当前没有 Activity/WebView，内容进 [pendingHtml] 排队，
+     *   等界面起来由 [flushPending] 补投（调用方据此回 `queued`，别再假装成功）。
+     */
+    fun renderHtml(html: String): Boolean {
         lastHtml = html; currentUrl = null
+        if (App.webView == null) {
+            pendingHtml = html // 只保留最后一份，避免堆积内存
+            return false
+        }
+        pendingHtml = null
         val full = embedSdk(html)
         // baseURL 不能为 null：opaque origin 下页面访问 localStorage 会抛 SecurityError
         main.post { App.webView?.loadDataWithBaseURL("https://aiface.local/", full, "text/html", "UTF-8", null) }
+        return true
+    }
+
+    /** 界面就绪后把排队的内容补投出去（幂等） */
+    fun flushPending() {
+        val html = pendingHtml ?: return
+        main.post {
+            val wv = App.webView ?: return@post
+            if (pendingHtml == null) return@post
+            pendingHtml = null
+            lastHtml = html; currentUrl = null
+            wv.loadDataWithBaseURL("https://aiface.local/", embedSdk(html), "text/html", "UTF-8", null)
+        }
     }
 
     /**
@@ -77,19 +110,30 @@ object CommandBus {
         }
     }
 
-    fun loadUrl(url: String, wake: Boolean) {
+    /** 无可用 WebView 返回 false（调用方应回明确错误，不要让 agent 以为生效了） */
+    fun loadUrl(url: String, wake: Boolean): Boolean {
+        if (App.webView == null) return false
         if (wake) main.post { App.activity?.let { Ui.wake(it) } }
-        currentUrl = url; lastHtml = null
+        currentUrl = url; lastHtml = null; pendingHtml = null
         main.post { App.webView?.loadUrl(url) }
+        return true
     }
 
-    /** 把数据经 JS SDK 注入当前页面（增量更新，不重载） */
-    fun deliverMessage(data: String) {
+    /**
+     * 把数据经 JS SDK 注入当前页面（增量更新，不重载）。
+     * 入参必须是合法 JSON，解析后重新序列化再注入——避免把任意脚本拼进 evaluateJavascript。
+     * 当前没有页面则返回 false。
+     */
+    fun deliverMessage(data: String): Boolean {
+        val el = try { Json.parseToJsonElement(data) } catch (e: Exception) { return false }
+        if (App.webView == null) return false
+        val payload = el.toString()
         main.post {
             App.webView?.evaluateJavascript(
-                "window.dispatchEvent(new CustomEvent('aiface-message',{detail:$data}))", null
+                "window.dispatchEvent(new CustomEvent('aiface-message',{detail:$payload}))", null
             )
         }
+        return true
     }
 
     fun eval(code: String, cb: (String?) -> Unit) {
@@ -99,35 +143,107 @@ object CommandBus {
     fun stateJson() = buildJsonObject {
         put("hasContent", JsonPrimitive(hasContent()))
         put("url", JsonPrimitive(currentUrl ?: (if (lastHtml != null) "(inline-html)" else "")))
+        put("pending", JsonPrimitive(pendingHtml != null))
         put("screenOn", JsonPrimitive(Ui.isScreenOn()))
         put("brightness", JsonPrimitive(Params.get("brightness")))
         put("theme", JsonPrimitive(Prefs.theme))
         put("fontScale", JsonPrimitive(Params.get("fontScale")))
         put("activityAlive", JsonPrimitive(App.activity != null))
+        put("lastSeq", JsonPrimitive(lastSeq()))
         put("paramDbg", JsonPrimitive(Params.lastDbg))
     }
 
     // ---------- 事件环形缓冲（agent 单向 long-poll 拉取） ----------
     data class Ev(val seq: Long, val at: Long, val kind: String, val data: String)
 
+    private val lock = Any()
     private val events = kotlin.collections.ArrayDeque<Ev>()
-    private var seq = 0L
 
+    /** seq 落盘：进程重启也不回退，agent 的 since 不会被"回到 0"卡死（P0-2） */
+    private fun seqSp() = App.ctx.getSharedPreferences("aiface_events", Context.MODE_PRIVATE)
+
+    private fun nextSeq(): Long {
+        val sp = seqSp()
+        val s = sp.getLong("seq", 0L) + 1
+        sp.edit().putLong("seq", s).apply()
+        return s
+    }
+
+    /** app 内部事件（可信来源）：system.* / auth.* / media.* / render.* … */
     fun emit(kind: String, data: String) {
-        synchronized(events) {
-            events.addLast(Ev(++seq, System.currentTimeMillis(), kind, data))
+        val e = Ev(nextSeq(), System.currentTimeMillis(), kind, data)
+        synchronized(lock) {
+            events.addLast(e)
             while (events.size > 200) events.removeFirst()
         }
+        wakeWaiters()
     }
 
-    /** since 之后的事件；JSON 数组字符串。data 字段由调用方保证为合法 JSON */
-    fun eventsSince(since: Long): String = synchronized(events) {
-        events.filter { it.seq > since }.joinToString(",", "[", "]") { e ->
-            """{"seq":${e.seq},"at":${e.at},"kind":"${e.kind}","data":${e.data}}"""
-        }
+    // 页面冒名用的命名空间：一律降级到 page.* 前缀
+    private val RESERVED_PREFIXES = listOf(
+        "system.", "auth.", "app.", "device.", "capability.", "render.", "media.", "theme."
+    )
+
+    /**
+     * 页面事件（不可信来源）：限字符集与长度，并阻断冒名系统命名空间（P0-5）。
+     * `slide.played` → `slide.played`（兼容现有页面）；`system.page` → `page.system.page`。
+     */
+    fun emitFromPage(rawType: String, data: String) {
+        var s = rawType
+            .filter { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
+            .take(64).trim('.', '_', '-')
+        if (s.isEmpty()) return
+        if (RESERVED_PREFIXES.any { s.startsWith(it, ignoreCase = true) }) s = "page.$s"
+        emit(if (s.contains('.')) s else "ui.$s", data)
     }
 
-    fun lastSeq(): Long = synchronized(events) { events.lastOrNull()?.seq ?: 0L }
+    /** data 必须是合法 JSON；不是就整体当字符串，绝不破坏响应结构 */
+    private fun safeData(data: String): JsonElement = try {
+        Json.parseToJsonElement(data)
+    } catch (e: Exception) {
+        JsonPrimitive(data.take(2000))
+    }
+
+    private fun evJson(e: Ev): JsonObject = JsonObject(
+        mapOf(
+            "seq" to JsonPrimitive(e.seq),
+            "at" to JsonPrimitive(e.at),
+            "kind" to JsonPrimitive(e.kind),
+            "data" to safeData(e.data)
+        )
+    )
+
+    fun eventsSince(since: Long): List<Ev> = synchronized(lock) { events.filter { it.seq > since } }
+
+    /** 序列化生成，kind/data 均经过转义——不再手写字符串拼接（P0-5） */
+    fun eventsJson(since: Long): JsonArray = JsonArray(eventsSince(since).map { evJson(it) })
+
+    fun lastSeq(): Long = seqSp().getLong("seq", 0L)
+
+    // long-poll 唤醒器：有事件立刻返回，不再 500ms 轮询
+    private val signal = java.util.concurrent.atomic.AtomicInteger(0)
+    private val awaitLock = java.util.concurrent.locks.ReentrantLock()
+    private val awaitCond = awaitLock.newCondition()
+
+    private fun wakeWaiters() {
+        signal.incrementAndGet()
+        awaitLock.lock()
+        try { awaitCond.signalAll() } finally { awaitLock.unlock() }
+    }
+
+    /** 最长等 timeoutMs；true = 有新事件被唤醒，false = 超时 */
+    fun awaitChange(timeoutMs: Long): Boolean {
+        val token = signal.get()
+        val deadline = System.currentTimeMillis() + timeoutMs
+        awaitLock.lock()
+        try {
+            while (System.currentTimeMillis() < deadline) {
+                if (signal.get() != token) return true
+                runCatching { awaitCond.await(200, java.util.concurrent.TimeUnit.MILLISECONDS) }
+            }
+            return signal.get() != token
+        } finally { awaitLock.unlock() }
+    }
 }
 
 object Ui {
@@ -139,6 +255,22 @@ object Ui {
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
         )
+    }
+
+    /** 冷启动/重建后回放持久化的亮度，避免界面与 /param 报告不一致 */
+    fun applyPersistedBrightness(a: Activity) {
+        val v = App.ctx.getSharedPreferences("aiface_params", Context.MODE_PRIVATE)
+            .getString("brightness", "auto") ?: "auto"
+        setWindowBrightness(a, v.toFloatOrNull())
+    }
+
+    @Suppress("DEPRECATION")
+    fun setWindowBrightness(a: Activity, f: Float?) {
+        val lp = WindowManager.LayoutParams()
+        lp.copyFrom(a.window.attributes)
+        lp.screenBrightness = f?.coerceIn(0.01f, 1f)
+            ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        a.window.attributes = lp
     }
 
     fun isScreenOn(): Boolean = try {
@@ -159,7 +291,7 @@ object HomeRefresh {
     }
 }
 
-/** app 参数控制（§6.1/§7 子集：M1 先做亮度/主题/字号/音量） */
+/** app 参数控制（§6.1/§7 子集：亮度/主题/字号/音量） */
 object Params {
     private val sp get() = App.ctx.getSharedPreferences("aiface_params", Context.MODE_PRIVATE)
     @Volatile var lastDbg = ""
@@ -173,6 +305,8 @@ object Params {
         else -> sp.getString(key, "") ?: ""
     }
 
+    fun supportedKeys() = listOf("brightness", "theme", "fontScale", "volume")
+
     fun set(key: String, value: String): Boolean = when (key) {
         "brightness" -> {
             sp.edit().putString(key, value).apply()
@@ -182,19 +316,16 @@ object Params {
             if (a != null) {
                 a.runOnUiThread {
                     // 必须传入新对象：setAttributes 对同引用会直接跳过
-                    val lp = WindowManager.LayoutParams()
-                    lp.copyFrom(a.window.attributes)
-                    lp.screenBrightness = f?.coerceIn(0.01f, 1f)
-                        ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                    a.window.attributes = lp
+                    Ui.setWindowBrightness(a, f)
                     lastDbg += " applied; screenBrightness=${a.window.attributes.screenBrightness}"
                 }
             }
             true
         }
-        "fontScale", "rotationLock", "idleDimSeconds" -> {
-            sp.edit().putString(key, value).apply()
-            true
+        "fontScale" -> {
+            val f = value.toFloatOrNull()
+            if (f == null || f < 0.5f || f > 3f) false
+            else { sp.edit().putString(key, value).apply(); true }
         }
         "theme" -> {
             if (Themes.exists(value)) {
@@ -214,6 +345,7 @@ object Params {
             sp.edit().putString(key, value).apply()
             true
         }
+        // rotationLock / idleDimSeconds 暂未实现：不再假装成功（P1-11）
         else -> false
     }
 }

@@ -117,7 +117,11 @@ object Themes {
             try { File(themeDir, "$id.html").delete() } catch (e: Exception) { /* ignore */ }
             persistAgent(cur)
             agentCache = cur
-            if (Prefs.theme == id) Prefs.theme = NATIVE
+            // 删掉的正是在用主题时，要把界面拉回原生时钟（P0-7：否则一直停在已删主题上）
+            if (Prefs.theme == id) {
+                Prefs.theme = NATIVE
+                HomeRefresh.invalidate()
+            }
         }
         return changed
     }

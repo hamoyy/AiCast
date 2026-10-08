@@ -140,7 +140,7 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
             // 底栏信息条
             Column {
                 Text(
-                    "IP  ${Net.localIp()}:${Server.PORT}",
+                    "IP  ${Net.localIp()}:${Server.port}",
                     color = labelColor, fontSize = (cfg.screenWidthDp / 45f).sp
                 )
                 Text(

@@ -2,6 +2,7 @@ package com.aiface.app
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.security.MessageDigest
 import java.net.NetworkInterface
 import java.util.Collections
 import java.util.UUID
@@ -60,13 +61,37 @@ object Prefs {
         else sp.edit().putBoolean("allow_" + permission, open).apply()
     }
 
-    // ---------- 密码（auth 模式，§4；M3 接入 /auth 校验） ----------
+    // ---------- 密码（auth 模式，§4） ----------
+    // 加盐 sha256 + 恒定时间比较（P1-14）。首次设置时生成随机盐；
+    // 老设备上已存的旧格式（无盐 sha256）在首次成功校验后自动迁移到新格式。
     fun setPassword(plain: String) {
         Auth.revokeAll() // 换密码即吊销全部旧 token
-        sp.edit().putString("pwd", sha256hex(plain)).apply()
+        val salt = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+            .joinToString("") { "%02x".format(it) }
+        sp.edit()
+            .putString("pwd_salt", salt)
+            .putString("pwd_hash", hash(salt, plain))
+            .remove("pwd")
+            .apply()
     }
-    fun hasPassword(): Boolean = sp.getString("pwd", null) != null
-    fun checkPassword(plain: String): Boolean = sp.getString("pwd", null) == sha256hex(plain)
+
+    fun hasPassword(): Boolean =
+        sp.getString("pwd_hash", null) != null || sp.getString("pwd", null) != null
+
+    fun checkPassword(plain: String): Boolean {
+        val salt = sp.getString("pwd_salt", null)
+        if (salt != null) {
+            val expect = sp.getString("pwd_hash", null) ?: return false
+            return MessageDigest.isEqual(expect.toByteArray(), hash(salt, plain).toByteArray())
+        }
+        val legacy = sp.getString("pwd", null) ?: return false
+        return if (MessageDigest.isEqual(legacy.toByteArray(), sha256hex(plain).toByteArray())) {
+            setPassword(plain) // 校验通过 → 迁移到加盐存储
+            true
+        } else false
+    }
+
+    private fun hash(salt: String, plain: String): String = sha256hex("$salt:$plain")
 
     private fun sha256hex(s: String): String =
         java.security.MessageDigest.getInstance("SHA-256")

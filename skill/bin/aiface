@@ -1,0 +1,417 @@
+#!/usr/bin/env node
+/*
+ * aiface CLI —— agent 端与 aiface 设备通信的唯一入口（零依赖，Node 18+）
+ * 协议对齐 docs/DESIGN.md §5/§6；设备配置长期保存于 ~/.aiface/devices.json
+ *
+ * 用法:
+ *   aiface discover [--timeout 3000] [--address ip:port]
+ *   aiface list
+ *   aiface auth   <dev> --password <pwd>
+ *   aiface info   <dev>
+ *   aiface render <dev> (--html-file f.html | --html "<html>" | --url <u> | --clear) [--wake]
+ *   aiface message <dev> (--data '<json>' | --data-file f.json)
+ *   aiface events <dev> [--since N] [--timeout 25] [--follow]
+ *   aiface state  <dev>
+ *   aiface param  <dev> <key> [value]
+ *   aiface themes <dev>                                   # 列出可选/已注册主题 + 当前项
+ *   aiface theme  <dev> <id>                              # 激活某主题为待机首页
+ *   aiface theme  <dev> --register (--html-file f | --html "<h>") [--name N] [--id ID] [--activate]
+ *   aiface theme  <dev> --remove <id>                     # 删除 agent 注册的自定义主题
+ *   aiface media  <dev> <file> [--name n]                 # 上传媒体（音频等）到设备，返回可嵌入 URL
+ *   aiface media  <dev> --list                            # 列出设备上的媒体项
+ *   aiface media  <dev> --remove <id>                     # 删除设备上的媒体
+ *   aiface forget <dev>
+ * <dev> 可为 deviceId / 设备名 / ip:port。所有输出为 JSON（stdout），错误 {"ok":false,...}。
+ */
+'use strict';
+const dgram = require('dgram');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const STORE_DIR = process.env.AIFACE_HOME || path.join(os.homedir(), '.aiface');
+const STORE_FILE = path.join(STORE_DIR, 'devices.json');
+
+// ---------- store ----------
+function loadStore() {
+  try { return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8')); }
+  catch (e) { return { devices: {} }; }
+}
+function saveStore(s) {
+  fs.mkdirSync(STORE_DIR, { recursive: true });
+  fs.writeFileSync(STORE_FILE, JSON.stringify(s, null, 2));
+}
+function resolveDev(key) {
+  const s = loadStore();
+  const k = key.toLowerCase();
+  for (const [id, d] of Object.entries(s.devices)) {
+    if (id.toLowerCase() === k || (d.name || '').toLowerCase() === k || d.address.toLowerCase() === k)
+      return { id, ...d };
+  }
+  if (/^[\w.-]+(:\d+)?$/.test(key)) return { id: key, address: key.includes(':') ? key : key + ':43210' };
+  die(`未知设备 "${key}"，先执行 aiface discover 或 aiface auth <ip:port> --password …`);
+}
+
+// ---------- http ----------
+async function api(dev, method, p, body, opts = {}) {
+  const base = `http://${dev.address}`;
+  const headers = {};
+  const token = dev.token && dev.tokenExp > Date.now() ? dev.token : null;
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  let payload;
+  if (body !== undefined) { headers['Content-Type'] = 'application/json'; payload = JSON.stringify(body); }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || 15000);
+  let res, text;
+  try {
+    res = await fetch(base + p, { method, headers, body: payload, signal: ctrl.signal });
+    text = await res.text();
+  } finally { clearTimeout(timer); }
+  let json; try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
+  if (res.status === 401) {
+    die(`设备 ${dev.id} 需要鉴权：先运行 aiface auth ${dev.address} --password <用户设置的密码>`, json);
+  }
+  if (!res.ok && json.ok !== false) die(`HTTP ${res.status}`, json);
+  return json;
+}
+
+// ---------- mDNS ----------
+function encodeName(labels) {
+  const parts = [];
+  for (const l of labels) { const b = Buffer.from(l, 'utf8'); parts.push(Buffer.from([b.length]), b); }
+  return Buffer.concat([...parts, Buffer.from([0])]);
+}
+function readName(buf, off, start) {
+  let cur = off, jumped = false, end = off, labels = [];
+  for (let i = 0; i < 128; i++) {
+    const len = buf.readUInt8(cur);
+    if (len === 0) { cur++; if (!jumped) end = cur; break; }
+    if ((len & 0xC0) === 0xC0) {
+      const ptr = buf.readUInt16BE(cur) & 0x3FFF;
+      if (!jumped) { end = cur + 2; jumped = true; }
+      cur = ptr; continue;
+    }
+    labels.push(buf.toString('utf8', cur + 1, cur + 1 + len));
+    cur += 1 + len;
+  }
+  return { name: labels.join('.'), next: end ?? cur };
+}
+function discover(timeoutMs) {
+  return new Promise((resolve) => {
+    const found = {}; // instance -> {name, port, target, txt, ip}
+    const hostnames = {}; // srv target -> ip
+    const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+    const query = Buffer.concat([
+      Buffer.from([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]),  // ID=0 flags=0 QDCOUNT=1 AN/NS/AR=0
+      encodeName(['_aiface', '_tcp', 'local']),
+      Buffer.from([0, 12, 0, 1]),                          // PTR IN
+    ]);
+    function onData(msg, rinfo) {
+      try {
+        const an = msg.readUInt16BE(6), ns = msg.readUInt16BE(8), ar = msg.readUInt16BE(10);
+        let off = 12; const qd = msg.readUInt16BE(4);
+        for (let i = 0; i < qd; i++) { off = readName(msg, off, off).next + 4; }
+        parsePtrAndMore(msg, an + ns + ar, off, found, hostnames);
+      } catch (e) { /* 忽略畸形包 */ }
+      void rinfo;
+    }
+    sock.on('message', onData);
+    sock.on('error', () => {});
+    sock.bind({ address: '0.0.0.0', port: 5353, exclusive: false }, () => {
+      try { sock.addMembership('224.0.0.251'); } catch (e) { /* 部分网络不允许组播 */ }
+      // dgram 签名是 send(msg, port, address)——顺序错了会抛异常
+      const send = () => { try { sock.send(query, 5353, '224.0.0.251'); } catch (e) { console.error('mdns send failed:', e.message); } };
+      send(); setTimeout(send, Math.floor(timeoutMs / 3)); setTimeout(send, Math.floor(timeoutMs / 2));
+      setTimeout(() => { try { sock.close(); } catch (e) {} resolve(found); }, timeoutMs);
+    });
+  });
+}
+// 一次解析 PTR/SRV/TXT/A 记录并合并到 found（需保留 rdata 偏移，不能用简化版 record 列表）
+function parsePtrAndMore(msg, count, startOff, found, hostnames) {
+  let off = startOff;
+  const ptrs = [], srvs = [], txts = [], as = [];
+  for (let i = 0; i < count; i++) {
+    const n = readName(msg, off, off); off = n.next;
+    const type = msg.readUInt16BE(off), ttl = msg.readUInt32BE(off + 4), rdlen = msg.readUInt16BE(off + 8);
+    const rdataOff = off + 10; off = rdataOff + rdlen;
+    if (type === 12) ptrs.push({ name: n.name, ptr: readName(msg, rdataOff, rdataOff).name });
+    else if (type === 33) srvs.push({ name: n.name, srv: {
+      port: msg.readUInt16BE(rdataOff + 4),
+      target: readName(msg, rdataOff + 6, rdataOff + 6).name } });
+    else if (type === 16) {
+      const txt = {}; let p = rdataOff;
+      while (p < rdataOff + rdlen) {
+        const len = msg.readUInt8(p); p++;
+        const kv = msg.toString('utf8', p, p + len); p += len;
+        const eq = kv.indexOf('=');
+        if (eq > 0) txt[kv.slice(0, eq)] = kv.slice(eq + 1); else if (kv) txt[kv] = true;
+      }
+      txts.push({ name: n.name, txt });
+    } else if (type === 1) as.push({ name: n.name, ip: msg.readUInt8(rdataOff) + '.' + msg.readUInt8(rdataOff + 1) + '.' + msg.readUInt8(rdataOff + 2) + '.' + msg.readUInt8(rdataOff + 3) });
+  }
+  for (const a of as) hostnames[a.name.toLowerCase()] = a.ip;
+  for (const p of ptrs) if (p.name === '_aiface._tcp.local') found[p.ptr] = found[p.ptr] || {};
+  for (const s of srvs) if (found[s.name]) { found[s.name].port = s.srv.port; found[s.name].target = s.srv.target.toLowerCase(); }
+  for (const t of txts) if (found[t.name]) found[t.name].txt = t.txt;
+  for (const [inst, d] of Object.entries(found)) {
+    const base = inst.replace(/\._aiface\._tcp\.local$/i, '');
+    d.name = decodeUtf8Label(base);
+    if (d.target) d.ip = hostnames[d.target];
+  }
+}
+function decodeUtf8Label(s) { return s.replace(/\\(\\d{3}|.)/g, (m, g) => /^\d/.test(g) ? String.fromCharCode(parseInt(g, 8)) : g); }
+
+// ---------- commands ----------
+async function cmdDiscover(args) {
+  const timeout = parseInt(args['timeout'] || '3000', 10);
+  const store = loadStore();
+  let devices = [];
+  if (args.address) {
+    devices = [{ address: normAddr(args.address), source: 'manual' }];
+  } else {
+    const found = await discover(timeout);
+    devices = Object.entries(found).filter(([, d]) => d.ip && d.port)
+      .map(([inst, d]) => ({ id: (d.txt && d.txt.deviceId) || inst, address: d.ip + ':' + d.port, source: 'mdns', _txt: d.txt, _name: d.name }));
+    if (!devices.length) {
+      // mDNS 无结果：回退探测已保存设备是否在线
+      devices = Object.entries(store.devices).map(([id, d]) => ({ id, address: d.address, source: 'cache' }));
+    }
+  }
+  const out = [];
+  for (const d of devices) {
+    try {
+      const info = await api({ address: d.address }, 'GET', '/info', undefined, { timeoutMs: 3000 });
+      const rec = {
+        deviceId: info.deviceId || d.id, name: info.name || d._name,
+        address: d.address, class: info.device && info.device.class,
+        touch: !!(info.device && info.device.input && info.device.input.touch),
+        interactionModel: info.device && info.device.interactionModel,
+        orientation: info.screen && info.screen.orientation,
+        mode: info.mode, authRequired: info.authRequired, open: info.open, source: d.source,
+      };
+      const id = rec.deviceId || rec.address;
+      const prev = store.devices[id] || {};
+      store.devices[id] = { ...prev, name: rec.name, address: rec.address };
+      out.push(rec);
+    } catch (e) {
+      if (d.source !== 'cache') out.push({ address: d.address, reachable: false, error: String(e.message || e) });
+    }
+  }
+  saveStore(store);
+  console.log(JSON.stringify({ ok: true, devices: out }, null, 1));
+}
+function cmdList() {
+  const s = loadStore();
+  const out = Object.entries(s.devices).map(([id, d]) => ({
+    deviceId: id, name: d.name, address: d.address,
+    authed: !!(d.token && d.tokenExp > Date.now()), note: d.note || null,
+  }));
+  console.log(JSON.stringify({ ok: true, devices: out }, null, 1));
+}
+async function cmdAuth(key, args) {
+  const dev = resolveDev(key);
+  const pwd = args.password || '';
+  const r = await api(dev, 'POST', '/auth', { password: pwd });
+  const s = loadStore();
+  // /info 是公开端点：拿权威 deviceId，把 <ip> 键的记录并入规范化键，避免同一设备重复
+  let id = dev.id;
+  try {
+    const info = await api(dev, 'GET', '/info', undefined, { timeoutMs: 5000 });
+    if (info.deviceId) {
+      if (id !== info.deviceId && s.devices[id]) {
+        s.devices[info.deviceId] = { ...s.devices[id], ...s.devices[info.deviceId] };
+        delete s.devices[id];
+      }
+      id = info.deviceId;
+    }
+  } catch (e) { /* 拿不到就用原键 */ }
+  s.devices[id] = { ...(s.devices[id] || {}), address: dev.address };
+  if (r.token) { s.devices[id].token = r.token; s.devices[id].tokenExp = r.expiresAt; }
+  saveStore(s);
+  console.log(JSON.stringify({ ok: true, deviceId: id, tokenSaved: !!r.token, type: r.type || 'token' }, null, 1));
+}
+async function cmdInfo(key) {
+  const dev = resolveDev(key);
+  console.log(JSON.stringify(await api(dev, 'GET', '/info'), null, 1));
+}
+async function cmdRender(key, args) {
+  const dev = resolveDev(key);
+  let body = {};
+  if (args['html-file']) body.html = fs.readFileSync(args['html-file'], 'utf8');
+  else if (args.html) body.html = String(args.html);
+  else if (args.url) body.url = args.url;
+  else if (args.clear) body = {};
+  else die('render 需要 --html-file / --html / --url / --clear 之一');
+  if (args.wake) body.wake = true;
+  console.log(JSON.stringify(await api(dev, 'POST', '/render', body, { timeoutMs: 30000 }), null, 1));
+}
+async function cmdMessage(key, args) {
+  const dev = resolveDev(key);
+  const data = args['data-file'] ? fs.readFileSync(args['data-file'], 'utf8') : args.data;
+  if (!data) die('message 需要 --data 或 --data-file');
+  JSON.parse(data); // 校验
+  const r = await fetch(`http://${dev.address}/message`, {
+    method: 'POST',
+    headers: headersFor(dev, { 'Content-Type': 'application/json' }),
+    body: data,
+  });
+  console.log(JSON.stringify(await r.json(), null, 1));
+}
+async function cmdEvents(key, args) {
+  const dev = resolveDev(key);
+  let since = parseInt(args.since || '0', 10);
+  const timeout = parseInt(args.timeout || '25', 10);
+  const follow = !!args.follow;
+  for (; ;) {
+    const r = await api(dev, 'GET', `/events?since=${since}&timeout=${follow ? Math.min(timeout, 30) : timeout}`, undefined,
+      { timeoutMs: (timeout + 10) * 1000 });
+    const evs = Array.isArray(r) ? r : [];
+    for (const e of evs) { since = Math.max(since, e.seq); console.log(JSON.stringify(e)); }
+    if (!follow) { if (!evs.length) console.log(JSON.stringify({ ok: true, events: [], since })); break; }
+  }
+}
+async function cmdState(key) {
+  const dev = resolveDev(key);
+  console.log(JSON.stringify(await api(dev, 'GET', '/state'), null, 1));
+}
+async function cmdParam(key, pos) {
+  const dev = resolveDev(key);
+  if (pos.length >= 2) {
+    console.log(JSON.stringify(await api(dev, 'POST', '/param', { key: pos[0], value: String(pos[1]) }), null, 1));
+  } else {
+    console.log(JSON.stringify(await api(dev, 'GET', '/param'), null, 1));
+  }
+}
+async function cmdThemes(key) {
+  const dev = resolveDev(key);
+  const r = await api(dev, 'GET', '/themes');
+  console.log(JSON.stringify(r, null, 1));
+}
+async function cmdTheme(key, pos, args) {
+  const dev = resolveDev(key);
+  // 删除：aiface theme <dev> --remove <id>
+  if (args.remove) {
+    const id = typeof args.remove === 'string' ? args.remove : pos[0];
+    if (!id) die('theme --remove 需要主题 id');
+    console.log(JSON.stringify(await api(dev, 'DELETE', '/theme?id=' + encodeURIComponent(id)), null, 1));
+    return;
+  }
+  // 注册：aiface theme <dev> --register (--html-file f | --html "<h>") [--name N] [--id ID] [--activate]
+  if (args.register) {
+    let html;
+    if (args['html-file']) html = fs.readFileSync(args['html-file'], 'utf8');
+    else if (args.html) html = String(args.html);
+    else die('theme --register 需要 --html-file 或 --html');
+    const body = { html };
+    if (args.name) body.name = String(args.name);
+    if (args.id) body.id = String(args.id);
+    if (args.activate) body.activate = true;
+    console.log(JSON.stringify(await api(dev, 'POST', '/theme', body, { timeoutMs: 30000 }), null, 1));
+    return;
+  }
+  // 激活：aiface theme <dev> <id>
+  const id = pos[0] || (typeof args === 'object' && args.use);
+  if (!id) die('theme 需要 <id>（激活）或 --register/--remove');
+  console.log(JSON.stringify(await api(dev, 'POST', '/param', { key: 'theme', value: String(id) }), null, 1));
+}
+function cmdForget(key) {
+  const s = loadStore(); const dev = resolveDev(key);
+  delete s.devices[dev.id]; saveStore(s);
+  console.log(JSON.stringify({ ok: true, forgotten: dev.id }));
+}
+
+// ---------- media ----------
+const MIME = {
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg',
+  opus: 'audio/opus', wav: 'audio/wav', flac: 'audio/flac', mp4: 'video/mp4',
+  webm: 'video/webm', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  gif: 'image/gif', webp: 'image/webp',
+};
+async function cmdMedia(key, pos, args) {
+  const dev = resolveDev(key);
+  if (args.list) { console.log(JSON.stringify(await api(dev, 'GET', '/media'), null, 1)); return; }
+  if (args.remove) {
+    const id = typeof args.remove === 'string' ? args.remove : pos[0];
+    if (!id) die('media --remove 需要 <id>');
+    console.log(JSON.stringify(await api(dev, 'DELETE', '/media?id=' + encodeURIComponent(id)), null, 1));
+    return;
+  }
+  const file = pos[0];
+  if (!file) die('media 需要 <file>（或 --list / --remove <id>）');
+  const buf = fs.readFileSync(file);
+  const name = String(args.name || path.basename(file));
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const type = MIME[ext] || 'application/octet-stream';
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 120000);
+  let res, text;
+  try {
+    res = await fetch(`http://${dev.address}/media?name=${encodeURIComponent(name)}`, {
+      method: 'POST', headers: headersFor(dev, { 'Content-Type': type }), body: buf, signal: ctrl.signal,
+    });
+    text = await res.text();
+  } finally { clearTimeout(timer); }
+  let json; try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
+  if (res.status === 401) die(`设备 ${dev.id} 需要鉴权：先运行 aiface auth ${dev.address} --password <pwd>`, json);
+  if (json.ok && json.url) {
+    const host = dev.address.split(':')[0];
+    json.absoluteUrl = `http://${host}:43210${json.url}`; // 直接可嵌进 <audio>/<img> src
+  }
+  console.log(JSON.stringify(json, null, 1));
+  if (!json.ok) process.exitCode = 1;
+}
+
+// ---------- arg parsing ----------
+function headersFor(dev, base) {
+  const h = { ...base };
+  if (dev.token && dev.tokenExp > Date.now()) h['Authorization'] = 'Bearer ' + dev.token;
+  return h;
+}
+function normAddr(a) { return a.includes(':') ? a : a + ':43210'; }
+function parseArgv(argv) {
+  const args = {}, pos = [];
+  for (let i = 0; i < argv.length; i++) {
+    const t = argv[i];
+    if (t.startsWith('--')) {
+      const k = t.slice(2);
+      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) args[k] = argv[++i];
+      else args[k] = true;
+    } else pos.push(t);
+  }
+  return { args, pos };
+}
+function die(msg, extra) {
+  console.log(JSON.stringify({ ok: false, error: msg, ...(extra ? { detail: extra } : {}) }));
+  process.exit(1);
+}
+
+async function main() {
+  const { args, pos } = parseArgv(process.argv.slice(2));
+  const cmd = pos[0];
+  const devKey = pos[1];
+  try {
+    switch (cmd) {
+      case 'discover': return await cmdDiscover(args);
+      case 'list': return cmdList();
+      case 'auth': need(devKey, 'auth <dev|ip:port> --password <pwd>'); return await cmdAuth(devKey, args);
+      case 'info': need(devKey); return await cmdInfo(devKey);
+      case 'render': need(devKey); return await cmdRender(devKey, args);
+      case 'message': need(devKey); return await cmdMessage(devKey, args);
+      case 'events': need(devKey); return await cmdEvents(devKey, args);
+      case 'state': need(devKey); return await cmdState(devKey);
+      case 'param': need(devKey); return await cmdParam(devKey, pos.slice(2));
+      case 'themes': need(devKey); return await cmdThemes(devKey);
+      case 'theme': need(devKey); return await cmdTheme(devKey, pos.slice(2), args);
+      case 'media': need(devKey); return await cmdMedia(devKey, pos.slice(2), args);
+      case 'forget': need(devKey); return cmdForget(devKey);
+      default:
+        console.log('用法: aiface <discover|list|auth|info|render|message|events|state|param|themes|theme|media|forget> [参数]  (详见文件头注释)');
+        process.exit(cmd ? 1 : 0);
+    }
+  } catch (e) {
+    die(String(e.message || e));
+  }
+}
+function need(v, hint) { if (!v) die('缺少设备参数' + (hint ? `：${hint}` : '')); }
+
+main();

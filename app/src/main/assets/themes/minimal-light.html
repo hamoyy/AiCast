@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>素白</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #f5f7fa; color: #0f141a;
+    font-family: -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .accent { position: absolute; left: 0; top: 0; right: 0; height: .8vmin;
+            background: linear-gradient(90deg, #4CC2A5, #4CA8E0); }
+  .wrap { position: absolute; left: 9vw; top: 50%; transform: translateY(-50%); }
+  .rule { width: 13vmin; height: .9vmin; border-radius: 9px; margin-bottom: 5vmin;
+          background: linear-gradient(90deg, #4CC2A5, #38D9C9); }
+  .time { font-size: 26vmin; font-weight: 200; line-height: .95; letter-spacing: -.01em;
+          font-variant-numeric: tabular-nums; }
+  .sec { font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+         font-size: 8vmin; color: #8a939e; margin-left: .18em; font-weight: 300; }
+  .date { margin-top: 4vmin; font-size: 5.2vmin; color: #54606e; font-weight: 400;
+          letter-spacing: .04em; }
+  .wk { margin-top: 1.6vmin; font-size: 3.4vmin; color: #2fb394; letter-spacing: .32em; }
+</style>
+</head>
+<body>
+  <div class="accent"></div>
+  <div class="wrap">
+    <div class="rule"></div>
+    <div class="time"><span id="hm">--:--</span><span class="sec" id="ss">--</span></div>
+    <div class="date" id="date">—</div>
+    <div class="wk" id="wk">—</div>
+  </div>
+<script>
+(function () {
+  var WD = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  function tick() {
+    var d = new Date();
+    document.getElementById('hm').textContent = p(d.getHours()) + ':' + p(d.getMinutes());
+    document.getElementById('ss').textContent = ':' + p(d.getSeconds());
+    document.getElementById('date').textContent =
+      d.getFullYear() + ' 年 ' + p(d.getMonth() + 1) + ' 月 ' + p(d.getDate()) + ' 日';
+    document.getElementById('wk').textContent = WD[d.getDay()];
+  }
+  tick(); setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

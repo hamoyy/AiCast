@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- 电视端（remote）：同一意图的大屏自动播报，6s 轮播 + OK 暂停；Chromium 66 兼容写法 -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<style>
+  * { box-sizing:border-box; margin:0; }
+  body { background:#0B0E12; color:#E6EAF0; font-family:system-ui,'PingFang SC','Microsoft YaHei',sans-serif;
+         height:100vh; overflow:hidden; }
+  .stage { position:relative; height:100vh; }
+  .slide { position:absolute; top:0; right:0; bottom:0; left:0; display:none; flex-direction:column; justify-content:center;
+           align-items:center; text-align:center; padding:64px; opacity:0; transform:translateY(20px); transition:opacity .5s, transform .5s; }
+  .slide.on { display:flex; opacity:1; transform:none; }
+  .kicker { font-size:18px; letter-spacing:.3em; color:#4CC2A5; margin-bottom:22px; }
+  .big { font-size:120px; font-weight:900; color:#4CC2A5; line-height:1; margin-bottom:18px; }
+  h2 { font-size:56px; line-height:1.2; font-weight:800; margin-bottom:20px; }
+  .body { font-size:26px; color:#AEB7C2; line-height:1.7; max-width:26em; }
+  .hint { position:absolute; bottom:34px; left:0; right:0; text-align:center; color:#5B6672; font-size:16px; letter-spacing:.08em; }
+  #pause { position:absolute; right:48px; bottom:30px; display:none; color:#FFD27A; font-size:18px; border:1px solid #4A4433; border-radius:99px; padding:4px 16px; }
+  body.paused #pause { display:block; }
+  .tick { position:absolute; top:0; left:0; height:4px; background:linear-gradient(90deg,#2E6B5C,#4CC2A5); width:0; }
+  @keyframes run { from{width:0} to{width:100%} }
+  .s1 { background:radial-gradient(1100px 620px at 50% -15%, #14303B 0%, #0B0E12 60%); }
+  .s2 { background:radial-gradient(1100px 620px at 12% 115%, #23173B 0%, #0B0E12 60%); }
+  .s3 { background:radial-gradient(1100px 620px at 88% 115%, #2E2413 0%, #0B0E12 60%); }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage"></div>
+  <div class="hint">◀ ▶ 翻页 · OK 暂停/继续 · 手机端可点按打卡</div>
+  <div id="pause">⏸ 已暂停</div>
+<script>
+  var SLIDES = [
+    { k:'家庭晚间播报', big:'20:30', h:'三件事，五分钟能做完', b:'手机上的打卡清单已同步发出，点一下就算完成。' },
+    { k:'NOW · 进行中', big:'🪴', h:'绿植浇水 · 散步 30 分钟', b:'完成后手机会回传事件，这块屏会立刻知道。' },
+    { k:'LATER · 睡前', big:'📵', h:'睡前放下手机', b:'这条最难——所以把它放在最后播。' }
+  ];
+  var DUR = 6000, idx = -1, paused = false;
+  var stage = document.getElementById('stage');
+  SLIDES.forEach(function(s, i){
+    var d = document.createElement('div');
+    d.className = 'slide s' + (i+1);
+    d.innerHTML = '<div class="tick"></div><div class="kicker"></div><div class="big"></div><h2></h2><div class="body"></div>';
+    d.querySelector('.kicker').textContent = s.k;
+    d.querySelector('.big').textContent = s.big;
+    d.querySelector('h2').textContent = s.h;
+    d.querySelector('.body').textContent = s.b;
+    stage.appendChild(d);
+  });
+  function show(n, by){
+    var ss = stage.children;
+    idx = (n + ss.length) % ss.length;
+    for (var i = 0; i < ss.length; i++) ss[i].classList.toggle('on', i === idx);
+    var tick = ss[idx].querySelector('.tick');
+    tick.style.animation = 'none'; void tick.offsetWidth;
+    tick.style.animation = 'run ' + DUR + 'ms linear'; tick.style.animationPlayState = paused ? 'paused' : 'running';
+    Aiface.emit('tv.broadcast', { index: idx, title: SLIDES[idx].h, by: by });
+  }
+  function restart(){ if (window.t) clearInterval(window.t); window.t = setInterval(function(){ if (!paused) show(idx+1, 'auto'); }, DUR); }
+  function setPaused(p){ paused = p; document.body.classList.toggle('paused', p); Aiface.emit('remote.pause', { paused: p }); }
+  document.addEventListener('keydown', function(e){
+    var k = e.keyCode;
+    if (k === 37 || k === 38) { show(idx-1, 'nav'); restart(); e.preventDefault(); }
+    else if (k === 39 || k === 40) { show(idx+1, 'nav'); restart(); e.preventDefault(); }
+    else if (k === 13 || k === 66) { setPaused(!paused); restart(); e.preventDefault(); }
+  });
+  show(0, 'auto'); restart();
+</script>
+</body>
+</html>

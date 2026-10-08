@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>极光</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #070b12; color: #eaf1f7;
+    font-family: -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .stage { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+  .blob {
+    position: absolute; border-radius: 50%;
+    filter: blur(64px); opacity: 0.5; will-change: transform;
+  }
+  .b1 { width: 62vmax; height: 62vmax; left: -12vmax; top: -16vmax;
+        background: radial-gradient(circle at 30% 30%, #38d9c9, transparent 60%);
+        animation: drift1 26s ease-in-out infinite alternate; }
+  .b2 { width: 56vmax; height: 56vmax; right: -14vmax; top: 4vmax;
+        background: radial-gradient(circle at 60% 40%, #5b8def, transparent 62%);
+        animation: drift2 32s ease-in-out infinite alternate; }
+  .b3 { width: 52vmax; height: 52vmax; left: 22vmax; bottom: -20vmax;
+        background: radial-gradient(circle at 50% 50%, #9b6dff, transparent 60%);
+        animation: drift3 29s ease-in-out infinite alternate; }
+  @keyframes drift1 { to { transform: translate(18vmax, 12vmax) scale(1.15); } }
+  @keyframes drift2 { to { transform: translate(-16vmax, 10vmax) scale(1.10); } }
+  @keyframes drift3 { to { transform: translate(10vmax, -14vmax) scale(1.20); } }
+  .wrap {
+    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    text-align: center; padding: 0 6vw; box-sizing: border-box;
+  }
+  .time { font-size: 24vmin; font-weight: 200; line-height: 1;
+          letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+  .sec { font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+         font-size: 9vmin; opacity: .55; margin-left: .18em; font-weight: 300; }
+  .date { margin-top: 3.5vmin; font-size: 5vmin; font-weight: 300; opacity: .82;
+          letter-spacing: .1em; }
+  .hint { margin-top: 6vmin; font-size: 2.6vmin; opacity: .35; letter-spacing: .3em; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="blob b1"></div>
+    <div class="blob b2"></div>
+    <div class="blob b3"></div>
+  </div>
+  <div class="wrap">
+    <div class="time"><span id="hm">--:--</span><span class="sec" id="ss">--</span></div>
+    <div class="date" id="date">—</div>
+    <div class="hint">A I F A C E · 极光</div>
+  </div>
+<script>
+(function () {
+  var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  function tick() {
+    var d = new Date();
+    document.getElementById('hm').textContent = p(d.getHours()) + ':' + p(d.getMinutes());
+    document.getElementById('ss').textContent = ':' + p(d.getSeconds());
+    document.getElementById('date').textContent =
+      d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日 ' + WD[d.getDay()];
+  }
+  tick(); setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

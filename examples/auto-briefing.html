@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- 自动轮播简报：零交互、自动播放（TV 形态的内容范式）；每页停留 5s，播完回传 slide.played
+     CSS 兼容基线：老 WebView（Chromium 66，常见于电视）不支持 inset/clamp/min/max/flex-gap，
+     全部采用"先回退值、再现代值覆盖"的渐进增强写法。 -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:#0B0E12; color:#E6EAF0; font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+         height:100vh; overflow:hidden; }
+  .stage { position:relative; height:100vh; }
+  .slide { position:absolute; top:0; right:0; bottom:0; left:0; display:flex; flex-direction:column; justify-content:center;
+           padding:64px; padding:min(9vw,64px); padding-top:64px;
+           padding-top:max(min(9vw,64px), calc(env(safe-area-inset-top, 0px) + 10px));
+           opacity:0; transform:translateY(26px) scale(.98); transition:opacity .7s, transform .7s; }
+  .slide.on { opacity:1; transform:none; }
+  .kicker { font-size:15px; font-size:clamp(13px,2.6vw,17px); letter-spacing:.24em; color:#4CC2A5; margin-bottom:14px; }
+  h2 { font-size:48px; font-size:clamp(30px,8.5vw,64px); line-height:1.16; font-weight:800; margin-bottom:18px; }
+  .body { font-size:22px; font-size:clamp(16px,3.6vw,26px); color:#AEB7C2; line-height:1.7; max-width:22em; }
+  .big { font-size:96px; font-size:clamp(52px,16vw,120px); font-weight:900; color:#4CC2A5; line-height:1; }
+  .dots { position:absolute; bottom:18px; bottom:max(18px, calc(4vh + env(safe-area-inset-bottom, 0px))); left:0; right:0; display:flex; justify-content:center; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#2A3340; transition:all .3s; }
+  .dot + .dot { margin-left:10px; }
+  .dot.on { background:#4CC2A5; width:26px; border-radius:5px; }
+  .tick { position:absolute; top:0; left:0; height:3px; background:linear-gradient(90deg,#2E6B5C,#4CC2A5); width:0; }
+  @keyframes run { from{width:0} to{width:100%} }
+  .s1 { background:radial-gradient(900px 500px at 80% -10%, #14303B 0%, #0B0E12 55%); }
+  .s2 { background:radial-gradient(900px 500px at 15% 110%, #23173B 0%, #0B0E12 55%); }
+  .s3 { background:radial-gradient(900px 500px at 90% 110%, #2E2413 0%, #0B0E12 55%); }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage"></div>
+  <div class="dots" id="dots"></div>
+<script>
+  var SLIDES = [
+    { k:'MORNING · 早安简报',   h:'早上好，今天也交给我吧', b:'外面晴 26°C，空气质量优。通勤预计 42 分钟，建议 8:15 出发。今天日程不紧，两个专注时段已为你留白。', big:'26°' },
+    { k:'FOCUS · 工作提醒',     h:'下午 3 点有一场评审',    b:'会前 20 分钟我会提醒你准备材料。上午的 4 条待办已完成 2 条，剩余事项已按优先级排到下午 1 点。', big:'15:00' },
+    { k:'EVENING · 晚间安排',   h:'今晚留给生活',          b:'散步 30 分钟的提醒 19:30 送达；绿植浇水还没完成，路过阳台时记得。明天 9 点前没有必须到场的安排。', big:'19:30' }
+  ];
+  var DUR = 5000, idx = -1;
+  var stage = document.getElementById('stage'), dots = document.getElementById('dots');
+  SLIDES.forEach(function(s, i){
+    var d = document.createElement('div');
+    d.className = 'slide s' + (i+1);
+    d.innerHTML = '<div class="tick"></div><div class="kicker"></div><div class="big"></div><h2></h2><div class="body"></div>';
+    d.querySelector('.kicker').textContent = s.k;
+    d.querySelector('.big').textContent = s.big;
+    d.querySelector('h2').textContent = s.h;
+    d.querySelector('.body').textContent = s.b;
+    stage.appendChild(d);
+    var o = document.createElement('div'); o.className = 'dot'; dots.appendChild(o);
+  });
+  function next(){
+    var ss = stage.children, ds = dots.children;
+    idx = (idx + 1) % ss.length;
+    for (var i = 0; i < ss.length; i++) { ss[i].classList.toggle('on', i === idx); ds[i].classList.toggle('on', i === idx); }
+    var tick = ss[idx].querySelector('.tick');
+    tick.style.animation = 'none'; void tick.offsetWidth; tick.style.animation = 'run ' + DUR + 'ms linear';
+    Aiface.emit('slide.played', { index: idx, title: SLIDES[idx].k });
+  }
+  next(); setInterval(next, DUR);
+</script>
+</body>
+</html>

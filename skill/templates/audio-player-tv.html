@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Clair de Lune · 月光</title>
+<!-- ★ 音频播放页模板（TV/大屏，Chromium 66 基线，实机验证 2026-09）
+   填充点：
+   1. <audio> 的 src —— 只用「公有领域/CC 授权」音轨（如 Wikimedia Commons 标注 PD 的录音），
+      不要投受版权保护的流行歌曲。示例曲：Red Curtain by HorrorPen（OpenGameArt, CC-BY 3.0，页面已署名）。
+      选源看「设备侧」实测吞吐，不看 PC：国内家宽下跨境直链（opengameart）能响但反复缓冲；实测参考——freesound.cn（聚合站，转载免版权频道，自用演示可以、商用核对原条款）直链 8 秒满缓冲很流畅、Wikimedia 媒体线超时不可用。别固定用某一个站，逐源体检为准。
+   1b. 没有合适外链时的可靠做法：把 mp3 转小（≤2.9MB，如 80kbps 单声道 ≈4-5 分钟）后以 data URI 内嵌进本页，
+      整页经 /render 走局域网直送——零外网依赖、零缓冲（TV 实测整曲 4:35 无卡顿）。注意 /render 报文上限 4MB。
+   2. 直链优先「设备可达 + 授权明确」的 https 外链源（国内可达性优先）。若走局域网喂流兜底：
+      PC 跑 templates/audioserver.js（node，零依赖，支持 Range），src 指 http://<PC_IP>:8770/x.mp3。
+      旧设备解码 mp3 最稳，opus/vorbis 视 WebView 版本而定（必要时 ffmpeg 转 mp3）。
+   3. 标题/副标题/来源标注文案。
+   回传事件：track.play{title,src|auto} / track.pause{at} / track.ended / track.error -->
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#070b14}
+body{font-family:"MiSans","PingFang SC","Microsoft YaHei",sans-serif;color:#e8eef8;
+  background:linear-gradient(180deg,#0a1020 0%,#070b14 55%,#04070d 100%)}
+.stage{position:absolute;top:0;left:0;right:0;bottom:0}
+/* 月亮 */
+.moon{position:absolute;top:12%;left:50%;width:34vh;height:34vh;margin-left:-17vh;border-radius:50%;
+  background:radial-gradient(circle at 38% 34%,#fdf6e0 0%,#e9dfba 42%,#b9ac82 78%,#8e8464 100%);
+  box-shadow:0 0 12vh 4vh rgba(240,230,190,.16);opacity:.92}
+.playing .moon{animation:breathe 6s ease-in-out infinite}
+@keyframes breathe{0%,100%{box-shadow:0 0 12vh 4vh rgba(240,230,190,.16)}
+  50%{box-shadow:0 0 18vh 7vh rgba(240,230,190,.28)}}
+/* 星点 */
+.star{position:absolute;width:.4vh;height:.4vh;border-radius:50%;background:#cfd8ea;opacity:.5}
+/* 文案 */
+.head{position:absolute;top:52%;left:0;right:0;text-align:center}
+.title{font-size:7.2vh;letter-spacing:.6vh;font-weight:700}
+.sub{margin-top:1.6vh;font-size:2.6vh;letter-spacing:.4vh;color:#9fb0cc}
+.src{margin-top:1vh;font-size:1.8vh;letter-spacing:.2vh;color:#5d6f8e}
+/* 进度 */
+.bar{position:absolute;left:8vw;right:8vw;bottom:9vh;height:.8vh;border-radius:.4vh;background:#1a2437}
+.fill{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:.4vh;
+  background:linear-gradient(90deg,#7f9cc8,#e8d9a8)}
+.time{position:absolute;left:8vw;right:8vw;bottom:11.6vh;font-size:2vh;color:#8fa0bd;
+  display:flex;justify-content:space-between}
+/* 遮罩 */
+.gate{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(4,7,13,.82);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.gate .big{font-size:5.4vh;font-weight:700}
+.gate .hint{margin-top:2.4vh;font-size:2.6vh;color:#9fb0cc;border:1px solid #3fd0a0;
+  border-radius:1.2vh;padding:1.4vh 3.4vh;color:#3fd0a0}
+.hide{display:none}
+</style></head>
+<body>
+<div class="stage" id="stage">
+  <div class="moon"></div>
+  <div class="head">
+    <div class="title">Red Curtain</div>
+    <div class="sub">HorrorPen · OpenGameArt · CC-BY 3.0 署名授权</div>
+    <div class="src">音频源：opengameart.org 外链直连（TV 实测 1.5s 起播）</div>
+  </div>
+  <div class="time"><span id="tCur">0:00</span><span id="tDur">--:--</span></div>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+</div>
+<div class="gate" id="gate">
+  <div class="big" id="gateTitle">&#127925; 本演示带声音</div>
+  <div class="hint" id="gateHint">按 OK / 点一下屏幕 开始播放</div>
+</div>
+<!-- ★ 音轨地址：换成设备可达的公版/CC 直链；局域网兜底指 http://<PC_IP>:8770/<file>.mp3（audioserver.js） -->
+<audio id="au" preload="auto"
+  src="https://opengameart.org/sites/default/files/Red%20Curtain.mp3"></audio>
+<script>
+// 星点
+(function(){var st=document.getElementById("stage"),i,s;
+  for(i=0;i<40;i++){s=document.createElement("div");s.className="star";
+    s.style.left=(Math.random()*100)+"%";s.style.top=(Math.random()*46)+"%";
+    s.style.opacity=(0.2+Math.random()*0.5).toFixed(2);st.appendChild(s);}})();
+
+var au=document.getElementById("au"),gate=document.getElementById("gate"),
+    stage=document.getElementById("stage"),fill=document.getElementById("fill"),
+    tCur=document.getElementById("tCur"),tDur=document.getElementById("tDur"),
+    gateTitle=document.getElementById("gateTitle"),gateHint=document.getElementById("gateHint");
+var started=false,finished=false;
+function emit(k,d){if(window.Aiface&&Aiface.emit)Aiface.emit(k,d);}
+
+function fmt(t){if(!isFinite(t))return"--:--";var m=Math.floor(t/60),s=Math.floor(t%60);
+  return m+(s<10?":0":":")+s;}
+au.addEventListener("loadedmetadata",function(){tDur.textContent=fmt(au.duration);});
+au.addEventListener("timeupdate",function(){
+  if(au.duration)fill.style.width=(au.currentTime/au.duration*100).toFixed(2)+"%";
+  tCur.textContent=fmt(au.currentTime);});
+au.addEventListener("ended",function(){
+  finished=false;started=false;stage.className="";
+  gateTitle.textContent="\u66f2\u7ec8";
+  gateHint.textContent="\u6309 OK / \u70b9\u4e00\u4e0b \u518d\u6765\u4e00\u904d";
+  gate.className="gate";
+  emit("track.ended",{title:"red-curtain"});});
+au.addEventListener("error",function(){
+  gateTitle.textContent="\u26a0 \u97f3\u9891\u62c9\u8f7d\u5931\u8d25";
+  gateHint.textContent="\u8bbe\u5907\u9700\u8981\u80fd\u8bbf\u95ee\u5916\u7f51";
+  gate.className="gate";
+  emit("track.error",{title:"red-curtain"});});
+
+function toggle(){
+  if(au.paused){
+    au.play();started=true;finished=false;stage.className="playing";
+    gate.className="gate hide";
+    emit("track.play",{title:"red-curtain",
+      src:"opengameart:Red Curtain by HorrorPen (CC-BY 3.0)"});
+  }else{
+    au.pause();stage.className="";
+    emit("track.pause",{at:Math.round(au.currentTime)});
+  }
+}
+document.addEventListener("keydown",function(e){
+  if(e.keyCode===13||e.keyCode===32||e.keyCode===40||e.keyCode===38){e.preventDefault();toggle();}});
+gate.addEventListener("click",toggle);
+// 进入页面即试播；被自动播放策略拦截则等 OK/点击
+au.play().then(function(){
+  started=true;stage.className="playing";gate.className="gate hide";
+  emit("track.play",{title:"red-curtain",auto:true});
+}).catch(function(){});
+</script>
+</body></html>

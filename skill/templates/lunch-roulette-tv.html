@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:"Microsoft YaHei",sans-serif;background:#0d0a07;color:#fff;overflow:hidden;
+  background:-webkit-radial-gradient(60% 40% circle,#241a0f 0%,#0d0a07 70%);
+  background:radial-gradient(circle at 60% 40%,#241a0f 0%,#0d0a07 70%);
+}
+.stage{position:absolute;top:6vh;right:7vw;bottom:6vh;left:7vw}
+.head{position:absolute;top:0;left:0;right:0;text-align:center}
+.kicker{font-size:2vh;letter-spacing:1.2vw;color:#c9a06a}
+h1{font-size:7vh;margin-top:1vh;font-weight:800}
+h1 em{font-style:normal;color:#ffb454}
+.board{position:absolute;top:20vh;bottom:16vh;left:0;right:0;
+  display:-webkit-box;display:flex;-webkit-box-align:center;align-items:center;-webkit-box-pack:center;justify-content:center}
+.card{background:#1d1509;border:1px solid #3a2c1c;border-radius:2.6vh;
+  padding:5vh 7vw;text-align:center;box-shadow:0 2vh 8vh rgba(0,0,0,.6);min-width:46vw}
+.emoji{font-size:22vh;line-height:1.1;display:block}
+.name{font-size:11vh;font-weight:800;margin-top:1vh;letter-spacing:.4vh}
+.memo{font-size:3.4vh;color:#b9a98f;margin-top:2vh}
+.spin .emoji,.spin .name{opacity:.25}
+.keys{position:absolute;bottom:0;left:0;right:0;text-align:center}
+.keys span{display:inline-block;font-size:2.8vh;color:#e8d9bf;background:#241b10;
+  border:1px solid #4a3823;border-radius:1.4vh;padding:1.4vh 2.6vw;margin:0 1vw}
+.keys b{color:#ffb454}
+.foot{margin-top:2vh;font-size:2.6vh;color:#8aa593;min-height:3vh}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="head">
+    <div class="kicker">AI FACE · 干饭决策 · 电视版</div>
+    <h1>中午<em>吃点什么</em>好？</h1>
+  </div>
+  <div class="board">
+    <div class="card" id="card">
+      <span class="emoji" id="emoji">🍽️</span>
+      <div class="name" id="dishName">按 OK 开摇</div>
+      <div class="memo" id="memo">摇到心动的按 ↑ 就它了</div>
+    </div>
+  </div>
+  <div class="keys">
+    <span><b>OK</b> 摇一摇 / 停</span>
+    <span><b>↑</b> 就它了</span>
+    <span><b>↓</b> 再摇一次</span>
+  </div>
+  <div class="foot" id="foot"></div>
+</div>
+<script>
+var FOODS=[
+ {e:"🍔",n:"汉堡",m:"热量炸弹，快乐翻倍"},
+ {e:"🍜",n:"拉面",m:"吸溜一口，烦恼没有"},
+ {e:"🍣",n:"寿司",m:"清淡精致，一口一个"},
+ {e:"🌶️",n:"麻辣烫",m:"自选十样，样样都香"},
+ {e:"🍗",n:"黄焖鸡",m:"米饭杀手，汤汁拌饭"},
+ {e:"🍲",n:"火锅",m:"一个人也能开锅"},
+ {e:"🍕",n:"披萨",m:"拉丝的那一下最治愈"},
+ {e:"🍚",n:"蛋炒饭",m:"粒粒金黄，五分钟上桌"},
+ {e:"🥟",n:"饺子",m:"上车饺子下车面，吃"},
+ {e:"🥩",n:"烤肉",m:"滋滋冒声才是正餐"},
+ {e:"🥗",n:"轻食沙拉",m:"下午还有正事？选它"},
+ {e:"🍢",n:"关东煮",m:"便利店之光，热乎"},
+ {e:"🦞",n:"小龙虾",m:"今天值得庆祝一下"},
+ {e:"🍝",n:"意面",m:"番茄还是奶油，到点选"},
+ {e:"🥘",n:"咖喱饭",m:"浓稠挂勺，配饭一流"},
+ {e:"🍛",n:"盖浇饭",m:"快准稳，干饭人标配"},
+ {e:"🍦",n:"先吃甜品",m:"反其道而行之"},
+ {e:"🥤",n:"奶茶配一切",m:"三分糖去冰"}
+];
+var card=document.getElementById("card"),
+    emoji=document.getElementById("emoji"),
+    dishName=document.getElementById("dishName"),
+    memo=document.getElementById("memo"),
+    foot=document.getElementById("foot");
+var spinning=false,timer=null,cur=null,locked=false;
+function rand(){return FOODS[Math.floor(Math.random()*FOODS.length)];}
+function show(f){emoji.textContent=f.e;dishName.textContent=f.n;memo.textContent="“"+f.m+"”";cur=f;}
+function stop(){
+  spinning=false;clearInterval(timer);card.className="card";
+  foot.textContent="";
+  Aiface.emit("lunch.spin",{food:cur.n,by:"tv"});
+}
+function start(){
+  if(spinning){stop();return;}
+  if(locked){locked=false;}
+  spinning=true;card.className="card spin";
+  timer=setInterval(function(){show(rand());},90);
+  setTimeout(function(){if(spinning)stop();},4500);
+}
+function pick(){
+  if(!cur||spinning)return;
+  locked=true;
+  foot.textContent="午饭就它了："+cur.n+" "+cur.e;
+  Aiface.emit("lunch.pick",{food:cur.n,memo:cur.m,by:"tv"});
+}
+document.addEventListener("keydown",function(e){
+  var k=e.keyCode;
+  if(k===13||k===40){e.preventDefault();start();}
+  else if(k===38){e.preventDefault();pick();}
+});
+setTimeout(start,1200);
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- 手机端（touch）：晚间习惯打卡，点按回传 routine.done；Chromium 66 兼容写法 -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<style>
+  * { box-sizing:border-box; margin:0; }
+  body { background:#0B0E12; color:#E6EAF0; font-family:system-ui,'PingFang SC','Microsoft YaHei',sans-serif;
+         min-height:100vh; padding:20px 16px; padding-top:20px;
+         padding-top:max(20px, calc(env(safe-area-inset-top, 0px) + 10px)); }
+  h1 { font-size:22px; margin-bottom:4px; }
+  .sub { color:#8A939E; font-size:13px; margin-bottom:18px; }
+  .task { display:flex; align-items:center; padding:16px 14px; background:#141A21; border:1px solid #232C36;
+          border-radius:16px; margin-bottom:10px; cursor:pointer; user-select:none; transition:opacity .2s, border-color .2s; }
+  .task.on { opacity:.45; border-color:#4CC2A5; }
+  .ic { font-size:26px; margin-right:12px; }
+  .tx { flex:1; }
+  .tx b { display:block; font-size:16px; }
+  .tx span { font-size:12px; color:#8A939E; }
+  .go { font-size:12px; color:#4CC2A5; border:1px solid #2A4A40; border-radius:99px; padding:5px 12px; }
+  .task.on .go { color:#8A939E; border-color:#232C36; }
+  #foot { margin-top:16px; text-align:center; color:#4CC2A5; font-size:14px; min-height:20px; }
+</style>
+</head>
+<body>
+  <h1>🌙 晚间习惯打卡</h1>
+  <div class="sub">电视那边正在同步播报 · 点一下就算完成</div>
+  <div class="task" data-k="water"><span class="ic">🪴</span><span class="tx"><b>给绿植浇水</b><span>阳台那盆，上周就欠了</span></span><span class="go">完成</span></div>
+  <div class="task" data-k="walk"><span class="ic">🚶</span><span class="tx"><b>散步 30 分钟</b><span>现在出发还来得及</span></span><span class="go">完成</span></div>
+  <div class="task" data-k="screenoff"><span class="ic">📵</span><span class="tx"><b>睡前放下手机</b><span>这条最难，先记着</span></span><span class="go">完成</span></div>
+  <div id="foot"></div>
+<script>
+  var done = {};
+  var tasks = document.querySelectorAll('.task');
+  for (var i = 0; i < tasks.length; i++) {
+    (function(t){
+      t.onclick = function(){
+        var k = t.getAttribute('data-k');
+        done[k] = !done[k];
+        t.classList.toggle('on', done[k]);
+        var n = 0; for (var j in done) if (done[j]) n++;
+        document.getElementById('foot').textContent = n === tasks.length ? '🎉 全部完成，电视那边会知道' : '已完成 ' + n + ' / ' + tasks.length;
+        Aiface.emit('routine.done', { key: k, on: done[k], count: n });
+        if (n === tasks.length) Aiface.emit('routine.allDone', {});
+      };
+    })(tasks[i]);
+  }
+</script>
+</body>
+</html>

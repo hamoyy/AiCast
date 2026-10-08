@@ -1,0 +1,154 @@
+<!doctype html>
+<!-- 投屏测试 TV-03：CSS 基线探测页（诊断用，验证 Chromium 66 到底丢了什么）
+     做法：同一组元素左右两栏对照——左栏用 clamp()/gap/inset 等现代写法并给出回退值，
+     右栏用等价的兼容写法。若左栏与右栏视觉不一致（间距消失、字号回退），即为 66 丢弃了该项。
+     同时用 CSS.supports 输出能力清单（会在页面上直接显示，肉眼可读）。
+     回传：demo.probe（含逐项布尔结果） -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>CSS 基线探测</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; }
+  body { background:#0A0D14; color:#E7ECF7; overflow:hidden; font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif; }
+  .wrap { position:absolute; top:0; right:0; bottom:0; left:0; padding:26px 30px; }
+  h1 { font-size:24px; font-weight:750; margin-bottom:4px; }
+  .sub { font-size:13px; color:#6C7B96; margin-bottom:16px; }
+
+  .cols { position:absolute; top:86px; left:30px; right:30px; bottom:30px; }
+  .col { position:absolute; top:0; bottom:0; width:48%; }
+  .col.a { left:0; } .col.b { right:0; }
+  .box { background:#111827; border:1px solid #1F2A3D; border-radius:12px; padding:14px 16px; }
+  .ttl { font-size:15px; font-weight:700; margin-bottom:12px; letter-spacing:.03em; }
+  .ttl.bad { color:#FF8A8A; } .ttl.good { color:#3FD9AE; }
+
+  /* ---- 被测 1：gap ---- */
+  .row-gap   { display:flex; }
+  .row-gap > div { width:52px; height:52px; background:#2A3A55; border-radius:8px; }
+  .row-margin > div { float:left; width:52px; height:52px; background:#2A3A55; border-radius:8px; margin-right:16px; }
+  .row-margin:after { content:''; display:block; clear:both; }
+
+  /* ---- 被测 2：clamp 字号（回退 22px 在前，clamp 在后；若被丢弃则停在 22px）---- */
+  .f-clamp { font-size:22px; font-size:clamp(14px,3.6vw,44px); line-height:1.25; }
+  .f-fixed { font-size:36px; line-height:1.25; }
+
+  /* ---- 被测 3：inset ---- */
+  .absbox { position:relative; height:74px; background:#0F1626; border-radius:8px; }
+  .absbox i { position:absolute; background:#B79BFF; border-radius:6px; display:block; }
+  .abs-inset i { inset:10px; inset:10px; }              /* 会被丢弃 */
+  .abs-trbl  i { top:10px; right:10px; bottom:10px; left:10px; }
+
+  .case { margin-bottom:14px; }
+  .case .lb { font-size:12px; color:#6C7B96; margin-bottom:7px; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td { padding:5px 0; border-bottom:1px solid #1A2233; }
+  td.k { color:#9AA7BF; }
+  td.v { text-align:right; font-weight:700; }
+  .y { color:#3FD9AE; } .n { color:#FF8A8A; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>CSS 基线探测 · 小米电视 WebView</h1>
+    <div class="sub">左右两栏做同一件事：左=现代写法（clamp / gap / inset），右=等价兼容写法。视觉不一致即为该项被丢弃。</div>
+    <div class="cols">
+      <div class="col a">
+        <div class="box" style="height:100%">
+          <div class="ttl bad">左 · 现代写法</div>
+
+          <div class="case">
+            <div class="lb">① flex gap:16px —— 三个方块之间应有缝</div>
+            <div class="row-gap"><div></div><div></div><div></div></div>
+          </div>
+
+          <div class="case">
+            <div class="lb">② font-size:clamp(14,3.6vw,44) —— 应为大号字</div>
+            <div class="f-clamp">带宽 286 Mbps</div>
+          </div>
+
+          <div class="case">
+            <div class="lb">③ inset:10px —— 紫块应撑满并留 10px 边</div>
+            <div class="absbox abs-inset"><i></i></div>
+          </div>
+
+          <div class="case">
+            <div class="lb">④ CSS.supports 实测</div>
+            <table id="t1"></table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col b">
+        <div class="box" style="height:100%">
+          <div class="ttl good">右 · 兼容写法（对照组）</div>
+
+          <div class="case">
+            <div class="lb">① margin-right:16px —— 三个方块之间应有缝</div>
+            <div class="row-margin"><div></div><div></div><div></div></div>
+          </div>
+
+          <div class="case">
+            <div class="lb">② font-size:36px 固定值 —— 应为同样大号</div>
+            <div class="f-fixed">带宽 286 Mbps</div>
+          </div>
+
+          <div class="case">
+            <div class="lb">③ top/right/bottom/left:10px —— 紫块应留 10px 边</div>
+            <div class="absbox abs-trbl"><i></i></div>
+          </div>
+
+          <div class="case">
+            <div class="lb">④ UA 与版本号</div>
+            <table id="t2"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  var PROBES = [
+    ['display:grid',              'display', 'grid'],
+    ['grid-template-columns',     'grid-template-columns', '1fr 1fr'],
+    ['gap',                       'gap', '16px'],
+    ['column-gap',                'column-gap', '16px'],
+    ['inset',                     'inset', '10px'],
+    ['clamp()',                   'font-size', 'clamp(14px,3.6vw,44px)'],
+    ['min()',                     'width', 'min(10px,20px)'],
+    ['max()',                     'width', 'max(10px,20px)'],
+    ['aspect-ratio',              'aspect-ratio', '1 / 1'],
+    ['backdrop-filter',           'backdrop-filter', 'blur(4px)'],
+    ['position:sticky',           'position', 'sticky'],
+    ['object-fit',                'object-fit', 'cover'],
+    ['env(safe-area-inset)',      'padding-top', 'env(safe-area-inset-top)'],
+    ['CSS 变量',                   '--x', '1'],
+    ['linear-gradient',           'background', 'linear-gradient(#000,#fff)'],
+    ['flexbox',                   'display', 'flex']
+  ];
+  var rows = '', res = {};
+  for (var i = 0; i < PROBES.length; i++) {
+    var name = PROBES[i][0], prop = PROBES[i][1], val = PROBES[i][2], ok = false;
+    try { ok = window.CSS && CSS.supports ? CSS.supports(prop, val) : false; } catch (e) { ok = false; }
+    res[name] = ok;
+    rows += '<tr><td class="k">' + name + '</td><td class="v ' + (ok ? 'y' : 'n') + '">' + (ok ? '支持' : '不支持') + '</td></tr>';
+  }
+  document.getElementById('t1').innerHTML = rows;
+
+  var ua = navigator.userAgent;
+  var m = ua.match(/Chrome\/(\d+)/);
+  document.getElementById('t2').innerHTML =
+    '<tr><td class="k">WebView 版本</td><td class="v">' + (m ? 'Chromium ' + m[1] : '未知') + '</td></tr>' +
+    '<tr><td class="k">视口</td><td class="v">' + window.innerWidth + '×' + window.innerHeight + '</td></tr>' +
+    '<tr><td class="k">DPR</td><td class="v">' + (window.devicePixelRatio || 1) + '</td></tr>' +
+    '<tr><td class="k">touch</td><td class="v">' + ('ontouchstart' in window ? '是' : '否') + '</td></tr>';
+
+  if (typeof Aiface !== 'undefined' && Aiface.emit) {
+    Aiface.emit('demo.probe', { ua: ua, viewport: window.innerWidth + 'x' + window.innerHeight, supports: res });
+  }
+</script>
+</body>
+</html>

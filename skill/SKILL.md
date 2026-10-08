@@ -55,10 +55,29 @@ $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF
    `padding-top: max(<设计值>, calc(env(safe-area-inset-top,0px) + <设计值>))` 为挖孔/刘海留位，底部同理。
 4. 中文内容一律**写入 UTF-8 文件后用 `--html-file` 投送**（Windows Git Bash 的 shell 参数会把中文变 GBK 乱码）。
 5. 单页面 ≤ 4MB（`/render` 上限，指 HTML 本体）；空 body 的 render = 回待机。
-6. **CSS 兼容基线 = Chromium 66**（电视系统 WebView 常无法升级，实测小米电视停在 66；手机一般 ≥110）：
-   `inset`、`clamp()/min()/max()`、flex `gap`、`env(safe-area-inset)` 在 66 上会被**静默丢弃**，
-   页面塌成内容尺寸挤在左上角。写法二选一：纯兼容（`top/right/bottom/left`、`margin` 代 gap），
-   或"回退值在前、现代值在后"双声明。`templates/` 全部按此基线写，可参照。
+6. **CSS 兼容基线 = Chromium 66**（小米电视 MiTV-MFTP0 实测停在 66.0.3359.158，无法通过应用商店升级；
+   手机一般 ≥110）。下面是 **CSS.supports 实测表**，不是推测（`examples/tv-03-cssprobe.html` 可复测）：
+
+   | 特性 | Chromium 66 | 说明 |
+   |---|---|---|
+   | `inset` | ✘ **丢弃** | 用 `top/right/bottom/left` |
+   | `clamp()/min()/max()` | ✘ **丢弃** | 用固定 px；要自适应就"回退值在前、现代值在后"双声明 |
+   | `env(safe-area-inset-*)` | ✘ **丢弃** | 直接用固定 padding，被丢也只是少留一点刘海位 |
+   | `aspect-ratio` | ✘ 不支持 | 用 `padding-top` 百分比撑 |
+   | `backdrop-filter` | ✘ 不支持 | 改用半透明纯色底 |
+   | **`gap` / `column-gap`** | **✔ 支持** | ⚠️ 旧文档说会被丢弃，实测支持（Chrome 66 起引入 flex gap） |
+   | `display:grid` `grid-template-columns` | ✔ 支持 | 可用，但 `grid-gap` 建议照旧写 `grid-gap` |
+   | `position:sticky` `object-fit` CSS 变量 渐变 flexbox | ✔ 支持 | 放心用 |
+
+   **`inset`/`clamp()` 被丢的后果极具欺骗性**：不是报错，而是整个
+   `position:absolute; inset:0` 的元素**失去所有位置约束**，页面塌成内容挤在左上角一小坨。
+7. **别依赖 JS 读视口**（电视实测坑）：Chromium 66 里脚本首次同步执行时
+   `window.innerWidth` 可能是 **`0x0`**（首帧尚未完成布局）。需要量尺寸就延后一拍再测：
+   `setTimeout(fn, 1000)` 或放 `window.onload`；纯 CSS 的 `%`/`vh` 不受影响。
+8. **完工前自查溢出**：整屏页面最终会被套上 `overflow:hidden`，超出视口的部分**静默裁掉**，
+   肉眼只觉得"下面怎么空了一块"。在页尾加一段自检把 `documentElement.scrollHeight - clientHeight`
+   和关键元素的 `getBoundingClientRect()` 用 `Aiface.emit` 回传给 agent，`$A events` 一拉就知道
+   （实测靠这招揪出过右栏溢出 252px；修法是把固定 px 高度改成 `flex:1` 自适应分配）。
 
 ## 交互回传（按需，不是日常必用）
 
@@ -165,8 +184,9 @@ $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF
 
 ## 安全与礼仪
 
-- 永不猜测/爆破密码；向用户索取，token 长期复用（**同一设备最多保留 32 个活跃 token**，
-  超了会淘汰最早过期的旧 token —— 老 token 被挤掉就重新 `auth` 一次）。
+- 永不猜测/爆破密码；向用户索取，token 长期复用（**同一设备最多保留 32 个活跃 token**）。
+  满了会淘汰**最新签发**的那个，所以反复调 `auth` 的客户端只会不断替换自己的旧 token、
+  不会挤掉长期在线的 agent；真被挤掉了重新 `auth` 一次即可。
 - 投送前若 `state` 显示 hasContent（正显示别人的内容），先确认再覆盖。
 - 提醒用户：真用之前把测试密码换掉（设置页可改，可"撤销所有 token"）。
 - 不该做的：不要试图绕过 403 权限，也不要把一台设备当另一台的"网盘"跨设备搬媒体 ——

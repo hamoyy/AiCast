@@ -1,0 +1,191 @@
+<!doctype html>
+<!-- 双端演示 · 电视端（remote 形态）
+     同一意图「今晚吃什么」的另一半：手机负责投，电视负责展示实时票情。
+     驱动方式：agent 侧收到手机的 vote.cast 后，向本页 POST /message {"action":"vote","id":"hotpot"}。
+
+     ⚠ Chromium 66 基线（小米电视实测）：本页刻意不使用 inset / clamp() / min() / max() /
+       env(safe-area-inset) / aspect-ratio / backdrop-filter —— 这些在 66 上会被静默丢弃。
+       代替：top/right/bottom/left、固定 px、百分比 + border-box。
+     交互：← → 手动切换候选高亮，OK 暂停自动轮播；不依赖触摸。
+     回传：tv.mounted / tv.updated / tv.pause / tv.resume -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>今晚吃什么 · 实时票情</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; }
+  body {
+    background:#070A10; color:#E8EDF8; overflow:hidden;
+    font-family:system-ui,-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+    font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { position:absolute; top:0; right:0; bottom:0; left:0; padding:30px 40px; }
+
+  .hd { position:absolute; top:30px; left:40px; right:40px; height:40px; border-bottom:1px solid #182131; }
+  .hd .t { float:left; font-size:26px; font-weight:750; letter-spacing:-.01em; }
+  .hd .t span { font-size:14px; color:#63718C; font-weight:400; margin-left:10px; letter-spacing:.1em; }
+  .hd .n { float:right; font-size:20px; color:#8A97AF; }
+  .hd .n b { color:#3FD9AE; font-size:26px; }
+
+  /* 主区：左侧大票数，右侧候选列表 —— 用 float + 百分比，不用 gap/flex-gap */
+  .main { position:absolute; top:92px; left:40px; right:40px; bottom:74px; }
+  .lead { float:left; width:38%; height:100%; text-align:center; }
+  .lead .name { font-size:80px; font-weight:900; letter-spacing:-.03em; line-height:1.1; color:#FFF; }
+  .lead .num  { font-size:190px; font-weight:900; line-height:1; letter-spacing:-.05em; color:#3FD9AE; }
+  .lead .unit { font-size:26px; color:#63718C; margin-top:6px; }
+  .lead .barbox { width:74%; height:9px; background:#141C2A; border-radius:99px; margin:22px auto 0; overflow:hidden; }
+  .lead .bar { height:100%; width:0; background:linear-gradient(90deg,#2E6B5C,#3FD9AE); border-radius:99px;
+               transition:width .6s cubic-bezier(.3,.9,.3,1); }
+  .lead .cap { font-size:14px; color:#63718C; margin-top:10px; letter-spacing:.2em; }
+
+  .rows { float:right; width:60%; height:100%; }
+  .row { position:relative; height:64px; border-bottom:1px solid #141C2A; overflow:hidden; }
+  .row .rank { position:absolute; left:0; top:22px; width:26px; font-size:15px; color:#4E5A70; }
+  .row .nm   { position:absolute; left:36px; top:20px; font-size:24px; font-weight:700; }
+  .row .cnt  { position:absolute; right:0; top:18px; font-size:26px; font-weight:800; color:#A8B4C8; }
+  .row .cnt em { font-size:12px; font-style:normal; color:#5A6B82; }
+  .row .track { position:absolute; left:36px; right:0; bottom:0; height:3px; background:transparent; }
+  .row .fill { height:100%; width:0; transition:width .6s cubic-bezier(.3,.9,.3,1); }
+
+  .row.on .nm { color:#FFF; }
+  .row.on .cnt { color:#3FD9AE; }
+
+  .ft { position:absolute; bottom:26px; left:40px; right:40px; text-align:center;
+        font-size:15px; color:#546075; letter-spacing:.06em; }
+  .ft b { color:#93A0B8; }
+  .paused { position:absolute; bottom:60px; right:40px; font-size:15px; color:#FFB84C;
+            border:1px solid rgba(255,184,76,.45); background:rgba(255,184,76,.1);
+            padding:6px 14px; border-radius:99px; display:none; }
+  body.paused .paused { display:block; }
+
+  .flash { animation:pop .6s ease; }
+  @keyframes pop { 0%{transform:scale(1)} 35%{transform:scale(1.22)} 100%{transform:scale(1)} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hd">
+      <div class="t">今晚吃什么<span>实时票情</span></div>
+      <div class="n">已投 <b id="total">3</b> / 4 人</div>
+    </div>
+
+    <div class="main">
+      <div class="lead">
+        <div class="name" id="lname">家常菜</div>
+        <div class="num" id="lnum">1</div>
+        <div class="unit">票领先</div>
+        <div class="barbox"><div class="bar" id="lbar"></div></div>
+        <div class="cap">当前领先</div>
+      </div>
+      <div class="rows" id="rows"></div>
+    </div>
+
+    <div class="ft"><b>← →</b> 切换查看　·　<b>OK</b> 暂停轮播　·　手机端投票会自动刷新这里</div>
+    <div class="paused">已暂停轮播</div>
+  </div>
+
+<script>
+  // id / 名称 / 颜色 —— 与手机端一一对应
+  var OPTIONS = [
+    {id:'hotpot',   n:'火锅',   c:'#D9534F', count:1},
+    {id:'homedish', n:'家常菜', c:'#4C8D5B', count:1},
+    {id:'japanese', n:'日料',   c:'#4C8DFF', count:1},
+    {id:'noodle',   n:'煮碗面', c:'#FFB84C', count:0},
+    {id:'takeout',  n:'点外卖', c:'#9B7BFF', count:0}
+  ];
+  var focus = 0, paused = false, timer = null;
+
+  function emit(n, d){ if (typeof Aiface !== 'undefined' && Aiface.emit) Aiface.emit(n, d || {}); }
+
+  var rowsBox = document.getElementById('rows');
+  rowsBox.innerHTML = OPTIONS.map(function(o, i){
+    return '<div class="row" id="r-' + o.id + '">' +
+             '<div class="rank">' + (i + 1) + '</div>' +
+             '<div class="nm">' + o.n + '</div>' +
+             '<div class="cnt" id="c-' + o.id + '">' + o.count + '</div>' +
+             '<div class="track"><div class="fill" id="f-' + o.id + '" style="background:' + o.c + '"></div></div>' +
+           '</div>';
+  }).join('');
+
+  function total(){
+    return OPTIONS.reduce(function(s, o){ return s + o.count; }, 0);
+  }
+
+  function paint(highlightId) {
+    document.getElementById('total').textContent = String(total());
+    var mx = OPTIONS.reduce(function(m, o){ return Math.max(m, o.count); }, 0) || 1;
+    OPTIONS.forEach(function(o){
+      document.getElementById('c-' + o.id).innerHTML = o.count + '<em> 票</em>';
+      document.getElementById('f-' + o.id).style.width = Math.round(o.count / mx * 100) + '%';
+    });
+    // 领先项 = 票数最高且平票时取靠前的那个
+    var lead = OPTIONS[0];
+    for (var i = 1; i < OPTIONS.length; i++) if (OPTIONS[i].count > lead.count) lead = OPTIONS[i];
+    document.getElementById('lname').textContent = lead.n;
+    document.getElementById('lnum').textContent = String(lead.count);
+    document.getElementById('lbar').style.width = Math.round(lead.count / Math.max(total(), 1) * 100) + '%';
+    if (highlightId) {
+      var el = document.getElementById('c-' + highlightId);
+      el.className = 'cnt flash';
+      setTimeout(function(){ el.className = 'cnt'; }, 620);
+    }
+  }
+
+  function setFocus(i){
+    focus = (i + OPTIONS.length) % OPTIONS.length;
+    var rows = rowsBox.children;
+    for (var k = 0; k < rows.length; k++) rows[k].className = (k === focus ? 'row on' : 'row');
+  }
+
+  function tick(){ if (timer) clearTimeout(timer); timer = setTimeout(function(){
+    setFocus(focus + 1); tick();
+  }, 3600); }
+
+  function setPause(p){
+    paused = p;
+    document.body.className = p ? 'paused' : '';
+    if (p) { if (timer) { clearTimeout(timer); timer = null; } }
+    else tick();
+    emit(p ? 'tv.pause' : 'tv.resume', { index: focus });
+  }
+
+  document.addEventListener('keydown', function(e){
+    var k = e.keyCode;
+    if (k === 39 || k === 22) { setFocus(focus + 1); }
+    else if (k === 37 || k === 21) { setFocus(focus - 1); }
+    else if (k === 13 || k === 23 || k === 66) { setPause(!paused); e.preventDefault(); }
+  });
+
+  // 关键：接收 agent 从手机端转发过来的投票增量
+  if (typeof Aiface !== 'undefined' && Aiface.onMessage) {
+    Aiface.onMessage(function(m){
+      if (!m) return;
+      if (m.action === 'vote' && m.id) {
+        var t = null;
+        for (var i = 0; i < OPTIONS.length; i++) if (OPTIONS[i].id === m.id) t = OPTIONS[i];
+        if (!t) return;
+        if (m.delta === -1) t.count = Math.max(0, t.count - 1);
+        else t.count += 1;
+        paint(m.id);
+        emit('tv.updated', { id:m.id, name:t.name || t.n, count:t.count, total:total(), source:'phone' });
+      } else if (m.action === 'tally' && m.list) {
+        m.list.forEach(function(u){
+          for (var i = 0; i < OPTIONS.length; i++) if (OPTIONS[i].id === u.id) OPTIONS[i].count = u.count;
+        });
+        paint(null);
+        emit('tv.updated', { total:total(), source:'bulk' });
+      }
+    });
+  }
+
+  setFocus(0);
+  tick();
+  paint(null);
+  emit('tv.mounted', { candidates: OPTIONS.length, total: total() });
+</script>
+</body>
+</html>

@@ -136,10 +136,6 @@ object CommandBus {
         return true
     }
 
-    fun eval(code: String, cb: (String?) -> Unit) {
-        main.post { App.webView?.evaluateJavascript(code, cb) }
-    }
-
     fun stateJson() = buildJsonObject {
         put("hasContent", JsonPrimitive(hasContent()))
         put("url", JsonPrimitive(currentUrl ?: (if (lastHtml != null) "(inline-html)" else "")))

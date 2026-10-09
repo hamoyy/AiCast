@@ -83,6 +83,36 @@ assertJson "events 是对象且带 lastSeq/reset/events" "isinstance(d,dict) and
 check "GET /events since=极大 → reset 提示" 200 "${A[@]}" "$BASE/events?since=999999999&timeout=1"
 assertJson "since 超界时返回 reset=true" "d.get('reset') is True"
 
+echo "-- 能力清单真实性（capabilities 每项必须有对应端点）--"
+# P1-16 回归：/info.capabilities 自称「已实现的端点」，一旦混入没有端点的项，
+# agent 照着画像去调必然 404。这里逐项探测，404 或没映射都算失败。
+PROBE="$(curl -s -m 8 "${A[@]}" "$BASE/info" | python3 -c '
+import json,os,sys
+m={"render":"GET /render","themes":"GET /themes","media":"GET /media",
+   "message":"POST /message","param":"GET /param","theme":"GET /themes",
+   "volume":"GET /param","brightness":"GET /param","fontScale":"GET /param",
+   "state":"GET /state","events":"GET /events?since=0&timeout=1","history":"GET /history"}
+for c in json.load(sys.stdin).get("capabilities",[]):
+    s=m.get(c)
+    print(c, *(s.split(" ") if s else ["?","?"]))
+')"
+while read -r cap meth path; do
+  [ -z "$cap" ] && continue
+  if [ "$meth" = "?" ]; then
+    FAIL=$((FAIL+1))
+    printf '  \033[31m✗\033[0m %-52s %s\n' "能力 $cap 有对应端点" "got=未上报任何已知端点"
+    continue
+  fi
+  code="$(curl -s -m 20 -o "$BODY_FILE" -w '%{http_code}' -X "$meth" "${A[@]}" "$BASE$path")"
+  if [ "$code" = "404" ]; then
+    FAIL=$((FAIL+1))
+    printf '  \033[31m✗\033[0m %-52s %s\n' "能力 $cap → $meth $path 可达" "got=404（上报了未实现的能力）"
+  else
+    PASS=$((PASS+1))
+    printf '  \033[32m✓\033[0m %-52s %s\n' "能力 $cap → $meth $path 可达" "$code"
+  fi
+done <<< "$PROBE"
+
 echo
 echo "通过 $PASS / 失败 $FAIL"
 [ "$FAIL" = 0 ]

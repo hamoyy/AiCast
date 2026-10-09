@@ -144,7 +144,8 @@ object DeviceInfo {
         if (Prefs.isOpen("message")) list += "message"
         if (Prefs.isOpen("param")) list += listOf("param", "theme", "volume", "brightness", "fontScale")
         list += listOf("state", "events", "history")   // 只读能力
-        if (Prefs.evalEnabled) list += "eval"
+        // 以前这里还会按 Prefs.evalEnabled 追加 "eval"，但服务端并没有 /eval 端点，
+        // agent 照着画像去调只能拿到 404（P1-16 的翻版）。等真端点落地再放开。
         return list.distinct()
     }
 

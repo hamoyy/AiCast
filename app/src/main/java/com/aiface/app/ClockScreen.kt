@@ -278,9 +278,5 @@ internal fun permLabel(p: String) = when (p) {
     "render" -> "投送"
     "message" -> "增量"
     "param" -> "参数"
-    "screen" -> "屏幕"
-    "system" -> "系统"
-    "screenshot" -> "截屏"
-    "eval" -> "JS"
     else -> p
 }

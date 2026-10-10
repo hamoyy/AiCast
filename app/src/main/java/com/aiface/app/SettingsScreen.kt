@@ -44,14 +44,10 @@ private val cardBg = Color(0xFF151A21)
 private val textMain = Color(0xFFE6EAF0)
 private val textDim = Color(0xFF8A939E)
 
+// 只剩 render 一个可拨开关。message / param 改为常开且不再提供选项；
+// screen / system / screenshot / eval 因从未落地对应端点，已整体移除。
 private val permLabelZh = mapOf(
-    "render" to "投送内容 render",
-    "message" to "增量消息 message",
-    "param" to "参数控制 param",
-    "screen" to "屏幕控制 screen",
-    "system" to "系统控制 system",
-    "screenshot" to "截屏 screenshot",
-    "eval" to "JS 注入 eval（仅本机开）"
+    "render" to "投送内容 render"
 )
 
 /** 设置页（M2，§10）：名称 / 模式 / 逐项权限 / 密码 */
@@ -189,7 +185,12 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
             }
         }
 
-        Section("投送权限（公开模式下逐项放行；需密码模式验证后同样按此判定）") {
+        Section("投送权限（公开模式与密码模式下都按此判定）") {
+            Text(
+                "增量消息 message、参数控制 param 默认常开，不再提供开关。",
+                color = textDim, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
             Prefs.openable.forEach { p ->
                 Row(
                     modifier = Modifier

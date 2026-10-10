@@ -11,9 +11,20 @@ import java.util.UUID
 object Prefs {
     private lateinit var sp: SharedPreferences
 
-    val openable = listOf(
-        "render", "message", "param", "screen", "system", "screenshot", "eval"
-    )
+    /**
+     * 用户可在设置页拨动的开关。经决策只保留**投送内容**一项。
+     *
+     * 历史包袱一并清掉：
+     * - `screen` / `system` / `screenshot`：从未有对应 HTTP 端点，是彻头彻尾的空开关；
+     * - `eval`：端点不存在、`CommandBus.eval` 也是死代码（见 DeviceInfo.capabilities 注释）。
+     */
+    val openable = listOf("render")
+
+    /**
+     * 常开权限：不再提供开关，但仍如实上报给 agent —— 否则 `/info.open` 里少了
+     * message/param，agent 会误以为这两项不可用。
+     */
+    private val alwaysOpen = listOf("message", "param")
 
     fun init(c: Context) {
         sp = c.getSharedPreferences("aiface", Context.MODE_PRIVATE)
@@ -44,21 +55,21 @@ object Prefs {
         get() = sp.getString("theme", Themes.NATIVE) ?: Themes.NATIVE
         set(v) = sp.edit().putString("theme", v).apply()
 
+    /**
+     * 逐项权限判定。只剩 `render` 真正会被关掉，其余一律放行 —— 关键是要**不再读**
+     * 旧设备里可能存着的 `allow_message=false` 之类，否则门被永久关死而 UI 上
+     * 已经没有开关能把它们改回来。
+     */
     fun isOpen(permission: String): Boolean = when (permission) {
-        // eval 只能由本机设置页开启，网络侧不可自提权
-        "eval" -> sp.getBoolean("allowEval", false)
-        else -> sp.getBoolean("allow_" + permission, permission in listOf("render", "message"))
+        "render" -> sp.getBoolean("allow_render", true)
+        else -> true
     }
 
-    var evalEnabled: Boolean
-        get() = sp.getBoolean("allowEval", false)
-        set(v) = sp.edit().putBoolean("allowEval", v).apply()
-
-    fun openList() = openable.filter { isOpen(it) }
+    /** 上报给 agent 的「当前放行项」= 可拨开关的现值 + 常开项 */
+    fun openList() = (openable.filter { isOpen(it) } + alwaysOpen).distinct()
 
     fun setOpen(permission: String, open: Boolean) {
-        if (permission == "eval") sp.edit().putBoolean("allowEval", open).apply()
-        else sp.edit().putBoolean("allow_" + permission, open).apply()
+        sp.edit().putBoolean("allow_$permission", open).apply()
     }
 
     // ---------- 密码（auth 模式，§4） ----------

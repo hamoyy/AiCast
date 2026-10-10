@@ -4,6 +4,10 @@
 #   无 token 时只跑公开部分（health/info）
 # 需要：curl、python3
 set -u
+# 只跟局域网设备通信，绕开本机 http_proxy —— 否则所有探测都拿不到连接（http_code=000），
+# 而 000 != 404 会被判为通过，检查形同虚设（第一次在带代理的机器上跑就是这样）。
+export no_proxy='*'
+export NO_PROXY='*'
 ADDR="${1:?用法: $0 <ip[:port]> [token]}"
 TOK="${2:-}"
 case "$ADDR" in
@@ -95,7 +99,8 @@ m={"render":"GET /render","themes":"GET /themes","media":"GET /media",
 for c in json.load(sys.stdin).get("capabilities",[]):
     s=m.get(c)
     print(c, *(s.split(" ") if s else ["?","?"]))
-')"
+' | tr -d '\r')"   # Windows 上 python 的 stdout 会把 \n 变成 \r\n，不strip掉的话
+                   # path 末尾带 \r → curl 拿到非法 URL → 一律 000（检查形同虚设）
 while read -r cap meth path; do
   [ -z "$cap" ] && continue
   if [ "$meth" = "?" ]; then

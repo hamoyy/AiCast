@@ -7,11 +7,18 @@
 <title>极光</title>
 <style>
   html, body {
-    margin: 0; height: 100%; overflow: hidden;
+    margin: 0; padding: 0; width: 100%; height: 100%;
     background: #070b12; color: #eaf1f7;
+    overflow: hidden;            /* 文档本身不产生滚动区 */
+    overscroll-behavior: none;   /* 禁掉过扫回弹 */
+    touch-action: none;          /* 手势不再被解释成滚动/平移 */
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; -webkit-user-drag: none;
     font-family: -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
   }
-  .stage { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+  /* 整屏固定盒：把超出视口的光斑裁在盒内，任何元素都撑不出可拖动区域。
+     别写 inset —— 电视的 Chromium 66 不支持，整条声明会被丢掉。 */
+  .stage { position: fixed; left: 0; top: 0; right: 0; bottom: 0; overflow: hidden; }
   .blob {
     position: absolute; border-radius: 50%;
     filter: blur(64px); opacity: 0.5; will-change: transform;
@@ -29,7 +36,7 @@
   @keyframes drift2 { to { transform: translate(-16vmax, 10vmax) scale(1.10); } }
   @keyframes drift3 { to { transform: translate(10vmax, -14vmax) scale(1.20); } }
   .wrap {
-    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    position: fixed; left: 0; right: 0; top: 50%; transform: translateY(-50%);
     text-align: center; padding: 0 6vw; box-sizing: border-box;
   }
   .time { font-size: 24vmin; font-weight: 200; line-height: 1;
@@ -64,6 +71,14 @@
       d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日 ' + WD[d.getDay()];
   }
   tick(); setInterval(tick, 1000);
+
+  // 双保险：CSS 已经禁掉滚动/手势，但 WebView 在过扫、多指或电视方向键下
+  // 仍可能把整页推走（极光之前就是被拖动后位移）。这里直接吞掉手势与拖拽，
+  // 并在万一发生滚动时立刻归位。
+  function stop(e) { if (e.cancelable) e.preventDefault(); }
+  ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'dragstart', 'selectstart']
+    .forEach(function (t) { document.addEventListener(t, stop, { passive: false }); });
+  window.addEventListener('scroll', function () { window.scrollTo(0, 0); }, { passive: true });
 })();
 </script>
 </body>

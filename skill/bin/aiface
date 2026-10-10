@@ -81,6 +81,12 @@ async function api(dev, method, p, body, opts = {}) {
     const sec = json && json.retryAfterMs ? Math.ceil(json.retryAfterMs / 1000) : 60;
     die(`设备 ${dev.id} 已锁定：${json && json.message ? json.message : '密码错误次数过多'}（${sec} 秒后自动解锁）`, json);
   }
+  // 403 + cast_disabled：设备把「投送」总开关关了。设备仍然在线、仍然能被发现，
+  // 只是不接受投送 —— 这种情况必须原话转告用户，别自己瞎重试。
+  if (res.status === 403 && json && json.code === 'cast_disabled') {
+    // message 本身就是一句可直接转述给人看的话，别再自己复述一遍
+    die(`设备 ${dev.id} 当前不接受投送：${json.message || '请在设备上打开 aiface → 访问模式 → 投送。'}`, json);
+  }
   if (!res.ok && json.ok !== false) die(`HTTP ${res.status}`, json);
   return json;
 }
@@ -198,6 +204,9 @@ async function cmdDiscover(args) {
         interactionModel: info.device && info.device.interactionModel,
         orientation: info.screen && info.screen.orientation,
         mode: info.mode, authRequired: info.authRequired, open: info.open, source: d.source,
+        // 老版本 app 没有这个字段，缺省视为可接受投送
+        accepting: info.accepting === undefined ? true : !!info.accepting,
+        acceptingHint: info.acceptingHint || null,
       };
       const id = rec.deviceId || rec.address;
       const prev = store.devices[id] || {};

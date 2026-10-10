@@ -224,10 +224,11 @@ private fun mount(rt: Routing) = with(rt) {
     }
 
     post("/render") {
+        // 投送总开关关着：设备仍可被发现，但投送一律拒绝，并明确告诉 agent 该让人去哪开
         if (!Prefs.isOpen("render"))
             return@post call.respond(
                 HttpStatusCode.Forbidden,
-                err("permission_denied", "该设备未开放 render，请到 aiface 设置开启")
+                err("cast_disabled", CAST_DISABLED_MSG)
             )
         val body = try { call.receiveLimited() }
         catch (e: BadBody) {
@@ -537,13 +538,17 @@ private fun mount(rt: Routing) = with(rt) {
 
 // ---------------- helpers ----------------
 
+/** 投送总开关关着时给 agent 的统一说法（/info.acceptingHint 用的是同一句） */
+private const val CAST_DISABLED_MSG =
+    "该设备已关闭投送开关。请让用户在设备上打开 aiface → 访问模式 → 投送，然后再试。"
+
 /** 逐项权限判定：无权限时直接写回 403 并返回 false，调用方 return 即可 */
 private suspend fun hasPerm(call: ApplicationCall, permission: String, hint: String): Boolean {
     if (Prefs.isOpen(permission)) return true
-    call.respond(
-        HttpStatusCode.Forbidden,
-        err("permission_denied", "该设备未开放 $permission（$hint）")
-    )
+    // render 现在就是投送总开关，措辞要能直接转述给人看
+    val msg = if (permission == "render") CAST_DISABLED_MSG
+    else "该设备未开放 $permission（$hint）"
+    call.respond(HttpStatusCode.Forbidden, err("permission_denied", msg))
     return false
 }
 

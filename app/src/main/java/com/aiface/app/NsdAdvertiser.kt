@@ -50,6 +50,8 @@ object NsdAdvertiser {
                 setAttribute("class", DeviceInfo.deviceClass())
                 setAttribute("touch", if (DeviceInfo.isTouch()) "1" else "0")
                 setAttribute("mode", Prefs.mode)
+                // 投送总开关：关了也要照常广播，只是声明自己不接受投送
+                setAttribute("accepting", if (Prefs.castEnabled) "1" else "0")
                 setAttribute("open", Prefs.openList().joinToString(","))
             }
         }

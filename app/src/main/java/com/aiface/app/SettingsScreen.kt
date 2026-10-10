@@ -44,24 +44,16 @@ private val cardBg = Color(0xFF151A21)
 private val textMain = Color(0xFFE6EAF0)
 private val textDim = Color(0xFF8A939E)
 
-// 只剩 render 一个可拨开关。message / param 改为常开且不再提供选项；
-// screen / system / screenshot / eval 因从未落地对应端点，已整体移除。
-private val permLabelZh = mapOf(
-    "render" to "投送内容 render"
-)
-
-/** 设置页（M2，§10）：名称 / 模式 / 逐项权限 / 密码 */
+/** 设置页（M2，§10）：名称 / 待机主题 / 访问模式（投送 + 密码）/ 本机 */
 @Composable
 fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
     var name by remember { mutableStateOf(Prefs.name) }
     var mode by remember { mutableStateOf(Prefs.mode) }
     var theme by remember { mutableStateOf(Prefs.theme) }
+    var cast by remember { mutableStateOf(Prefs.castEnabled) }
+    var pwdOn by remember { mutableStateOf(Prefs.mode == "auth") }
     var pwd by remember { mutableStateOf("") }
-    var pwd2 by remember { mutableStateOf("") }
     var msg by remember { mutableStateOf<String?>(null) }
-    var openMap by remember {
-        mutableStateOf(Prefs.openable.associateWith { Prefs.isOpen(it) })
-    }
 
     Column(
         modifier = Modifier
@@ -133,24 +125,49 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
         }
 
         Section("访问模式") {
-            Row {
-                ModeChip("公开 · 谁能连谁投", mode == "public") {
-                    Prefs.mode = "public"; mode = "public"; onChanged(); msg = "已切换：公开"
+            // ① 投送总开关：关掉只是拒绝投送，设备照样被局域网发现
+            ToggleRow(
+                title = "投送",
+                sub = "关闭后仍可被搜索到，但投送会被拒绝",
+                checked = cast,
+                onToggle = { on ->
+                    Prefs.castEnabled = on
+                    cast = on
+                    onChanged()
+                    msg = if (on) "已开启投送"
+                    else "已关闭投送（设备仍可被发现，但会拒绝投送）"
                 }
-                Spacer(Modifier.width(10.dp))
-                ModeChip("需密码 · agent 需验证", mode == "auth") {
-                    Prefs.mode = "auth"; mode = "auth"; onChanged(); msg = "已切换：需密码"
+            )
+            Spacer(Modifier.height(14.dp))
+            // ② 密码验证：默认关 = 公开投送；打开才要设密码
+            ToggleRow(
+                title = "密码验证",
+                sub = "关闭 = 公开投送；开启后 agent 需凭密码换 token",
+                checked = pwdOn,
+                onToggle = { on ->
+                    if (on) {
+                        // 先展开输入框，等点「确认」才真正生效，避免打开即半配置状态
+                        pwdOn = true
+                        msg = "请输入密码后点确认"
+                    } else {
+                        // 关闭不要求验证旧密码：直接清密码 + 吊销全部 token
+                        Prefs.clearPassword()
+                        Prefs.mode = "public"
+                        mode = "public"
+                        pwdOn = false
+                        pwd = ""
+                        onChanged()
+                        msg = "已关闭密码验证：密码已清除，全部 token 已吊销"
+                    }
                 }
-            }
-            Spacer(Modifier.height(10.dp))
-            if (Prefs.mode == "auth") {
+            )
+            if (pwdOn) {
+                Spacer(Modifier.height(12.dp))
                 if (Prefs.hasPassword()) {
-                    Text("已设置密码 ✓", color = accent, fontSize = 13.sp)
+                    Text("已设置密码 ✓（重填即修改）", color = accent, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                 }
-                EditRow(pwd, "新密码（至少 4 位）", onChange = { pwd = it }, password = true)
-                Spacer(Modifier.height(8.dp))
-                EditRow(pwd2, "再输一遍确认", onChange = { pwd2 = it }, password = true)
+                EditRow(pwd, "密码（至少 4 位）", onChange = { pwd = it }, password = true)
                 Spacer(Modifier.height(10.dp))
                 Box(
                     modifier = Modifier
@@ -159,18 +176,21 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                         .background(accent, RoundedCornerShape(10.dp))
                         .clickable {
                             if (pwd.length < 4) msg = "密码太短（至少 4 位）"
-                            else if (pwd != pwd2) msg = "两次输入不一致"
                             else {
-                                Prefs.setPassword(pwd); pwd = ""; pwd2 = ""
+                                Prefs.setPassword(pwd)   // 内含 revokeAll，旧 token 立即失效
+                                Prefs.mode = "auth"
+                                mode = "auth"
+                                pwd = ""
+                                onChanged()
                                 msg = "密码已保存（agent 首次连接需向你索取）"
                             }
                         },
                     contentAlignment = Alignment.Center
-                ) { Text("保存密码", color = bgDark, fontWeight = FontWeight.Bold) }
+                ) { Text("确认", color = bgDark, fontWeight = FontWeight.Bold) }
             }
         }
 
-        if (Prefs.mode == "auth" && Prefs.hasPassword()) {
+        if (mode == "auth" && Prefs.hasPassword()) {
             Section("已授权的设备（token 30 天有效）") {
                 Info("当前", "${Auth.activeCount()} 个 agent 持有有效 token")
                 Spacer(Modifier.height(8.dp))
@@ -182,43 +202,6 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                         .clickable { Auth.revokeAll(); msg = "已吊销全部 token（agent 需重新输密码）" },
                     contentAlignment = Alignment.Center
                 ) { Text("吊销全部 token", color = Color(0xFFE58C8C), fontWeight = FontWeight.Bold) }
-            }
-        }
-
-        Section("投送权限（公开模式与密码模式下都按此判定）") {
-            Text(
-                "增量消息 message、参数控制 param 默认常开，不再提供开关。",
-                color = textDim, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            Prefs.openable.forEach { p ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        permLabelZh[p] ?: p,
-                        color = textMain, fontSize = 15.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = openMap[p] ?: false,
-                        onCheckedChange = { on ->
-                            Prefs.setOpen(p, on)
-                            openMap = openMap + (p to on)
-                            onChanged(); msg = "已更新权限：$p"
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = accent,
-                            checkedThumbColor = bgDark,
-                            uncheckedTrackColor = cardBg,
-                            uncheckedThumbColor = textDim,
-                            uncheckedBorderColor = Color(0xFF2A313B)
-                        )
-                    )
-                }
             }
         }
 
@@ -252,22 +235,32 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     Spacer(Modifier.height(14.dp))
 }
 
+/** 一行开关：左边标题+说明，右边 Switch（电视端可靠 D-pad 聚焦） */
 @Composable
-private fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .background(
-                if (selected) accent else Color(0xFF202730),
-                RoundedCornerShape(20.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp)
+private fun ToggleRow(
+    title: String,
+    sub: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            label,
-            color = if (selected) bgDark else textDim,
-            fontSize = 14.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = textMain, fontSize = 15.sp)
+            Text(sub, color = textDim, fontSize = 12.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = accent,
+                checkedThumbColor = bgDark,
+                uncheckedTrackColor = cardBg,
+                uncheckedThumbColor = textDim,
+                uncheckedBorderColor = Color(0xFF2A313B)
+            )
         )
     }
 }

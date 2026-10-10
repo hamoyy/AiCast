@@ -64,6 +64,7 @@ object DeviceInfo {
         } catch (e: Exception) { false }
 
         val batt = battery()
+        val accepting = Prefs.castEnabled
 
         return JsonObject(
             mapOf(
@@ -71,6 +72,14 @@ object DeviceInfo {
                 "name" to JsonPrimitive(Prefs.name),
                 "mode" to JsonPrimitive(Prefs.mode),
                 "authRequired" to JsonPrimitive(Prefs.mode == "auth" && Prefs.hasPassword()),
+                // 投送总开关：关掉时依然可被发现、依然上报画像，但必须显式声明"不可被投送"。
+                // 附一句可直接转述给人看的话，省得 agent 自己措辞。
+                "accepting" to JsonPrimitive(accepting),
+                *if (accepting) emptyArray() else arrayOf(
+                    "acceptingHint" to JsonPrimitive(
+                        "该设备已关闭投送开关。请让用户在设备上打开 aiface → 访问模式 → 投送，然后再试。"
+                    )
+                ),
                 "open" to JsonArray(Prefs.openList().map { JsonPrimitive(it) }),
                 "device" to JsonObject(
                     mapOf(

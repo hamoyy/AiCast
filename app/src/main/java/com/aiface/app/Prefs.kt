@@ -56,21 +56,27 @@ object Prefs {
         set(v) = sp.edit().putString("theme", v).apply()
 
     /**
-     * 逐项权限判定。只剩 `render` 真正会被关掉，其余一律放行 —— 关键是要**不再读**
-     * 旧设备里可能存着的 `allow_message=false` 之类，否则门被永久关死而 UI 上
-     * 已经没有开关能把它们改回来。
+     * **投送总开关**（设置页「访问模式」第一行）。关掉后设备仍会被局域网发现、
+     * 仍然上报画像，但 `/info` 会声明 `accepting:false`，`POST /render` 直接失败。
+     */
+    var castEnabled: Boolean
+        get() = sp.getBoolean("allow_render", true)
+        set(v) = sp.edit().putBoolean("allow_render", v).apply()
+
+    /**
+     * 逐项权限判定。只剩 `render`（即投送总开关）真正会被关掉，其余一律放行 ——
+     * 关键是要**不再读**旧设备里可能存着的 `allow_message=false` 之类，否则门被
+     * 永久关死而 UI 上已经没有开关能把它们改回来。
      */
     fun isOpen(permission: String): Boolean = when (permission) {
-        "render" -> sp.getBoolean("allow_render", true)
+        "render" -> castEnabled
         else -> true
     }
 
     /** 上报给 agent 的「当前放行项」= 可拨开关的现值 + 常开项 */
     fun openList() = (openable.filter { isOpen(it) } + alwaysOpen).distinct()
 
-    fun setOpen(permission: String, open: Boolean) {
-        sp.edit().putBoolean("allow_$permission", open).apply()
-    }
+    // 没有 setOpen 了：投送总开关直接改 Prefs.castEnabled，别再绕一层权限名
 
     // ---------- 密码（auth 模式，§4） ----------
     // 加盐 sha256 + 恒定时间比较（P1-14）。首次设置时生成随机盐；
@@ -88,6 +94,15 @@ object Prefs {
 
     fun hasPassword(): Boolean =
         sp.getString("pwd_hash", null) != null || sp.getString("pwd", null) != null
+
+    /**
+     * 关闭「密码验证」：不要求输入旧密码，直接清掉密码存根并吊销全部 token
+     * （旧 token 若还有效就等于密码没关，agent 照样能写）。
+     */
+    fun clearPassword() {
+        Auth.revokeAll()
+        sp.edit().remove("pwd").remove("pwd_hash").remove("pwd_salt").apply()
+    }
 
     fun checkPassword(plain: String): Boolean {
         val salt = sp.getString("pwd_salt", null)

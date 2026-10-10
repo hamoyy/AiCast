@@ -8,7 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -39,7 +41,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -86,15 +87,6 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .pointerInput(Unit) {
-                // 手机端：首页右滑 → 打开投送历史
-                var total = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { total = 0f },
-                    onHorizontalDrag = { _, dragAmount -> total += dragAmount },
-                    onDragEnd = { if (total > 160f) onHistory() }
-                )
-            }
     ) {
         TechBackground()
         Column(
@@ -124,6 +116,16 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
                     color = labelColor,
                     fontSize = (cfg.screenWidthDp / 55f).sp
                 )
+                Spacer(Modifier.width(10.dp))
+                // 历史入口：原来靠首页右滑，手势和电视 D-pad 都不好使，改成和设置并排的按钮
+                Box(
+                    modifier = Modifier
+                        .height(32.dp)
+                        .background(Color(0x80151A21), RoundedCornerShape(16.dp))
+                        .clickable(onClick = onHistory)
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text("历史", color = labelColor, fontSize = 13.sp) }
                 IconButton(onClick = onSettings, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Default.Settings,
@@ -144,7 +146,9 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
                     color = labelColor, fontSize = (cfg.screenWidthDp / 45f).sp
                 )
                 Text(
-                    "ID  ${Prefs.deviceId}    开放: ${if (openLabels.isEmpty()) "无" else openLabels}",
+                    "ID  ${Prefs.deviceId}    " + if (Prefs.castEnabled)
+                        "开放: ${if (openLabels.isEmpty()) "无" else openLabels}"
+                    else "已关闭投送",
                     color = labelColor, fontSize = (cfg.screenWidthDp / 45f).sp
                 )
             }

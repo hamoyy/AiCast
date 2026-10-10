@@ -30,6 +30,16 @@ $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF
 - 发现失败时：问用户待机时钟底部显示的 IP → `$A discover --address 192.168.x.x` 手动登记；
   仍不通多半是设备重启后 app 没在跑（部分 ROM 拦开机自启属正常），请用户手动打开一次 app。
 
+### 设备可能"不接受投送"——发现得到 ≠ 能投
+
+`/info` 与 `discover` 都会给出 **`accepting`**（老版本 app 没有该字段，视为 `true`）。
+它为 `false` 表示**用户在 app 里把「投送」总开关关了**——设备照样在线、照样被搜索到，
+但 `POST /render` 会直接失败（403 `cast_disabled`）。
+
+**遇到 `accepting:false` 时不要自己反复重试或换设备**，`acceptingHint` 里已经写好一句可
+直接转述给人看的话，照原话告诉用户，请他到设备上打开 **aiface → 访问模式 → 投送** 再让你重试。
+CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
+
 ## 画像驱动生成决策表（§7.1，最关键）
 
 | 画像 | interactionModel | 应生成的内容 |

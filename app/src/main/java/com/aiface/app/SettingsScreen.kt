@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
@@ -63,8 +64,6 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
     var pwdErr by remember { mutableStateOf<String?>(null) }
     var msg by remember { mutableStateOf<String?>(null) }
 
-    // 焦点：打开密码验证时落到密码框；关闭时把焦点和软键盘一起收掉，
-    // 否则焦点会弹回最上面的设备名称输入框（实测就是这个体验问题）
     var nameEditing by remember { mutableStateOf(false) }
     val nameBox = remember { FocusRequester() }
     val pwdBox = remember { FocusRequester() }
@@ -72,6 +71,15 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
     var focusPwd by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // 离开设置页就把软键盘收掉：否则窗口会一直停在"给键盘留了位置"的缩小状态，
+    // 回到待机页下半屏是黑的（实测 mIsInputViewShown 一直是 true，回主界面也一样）
+    DisposableEffect(Unit) {
+        onDispose { keyboard?.hide() }
+    }
+
+    // 焦点：打开密码验证时落到密码框；关闭时把焦点和软键盘一起收掉，
+    // 否则焦点会弹回最上面的设备名称输入框（实测就是这个体验问题）
     LaunchedEffect(focusPwd) {
         if (focusPwd) { pwdBox.requestFocus(); focusPwd = false }
     }
@@ -131,6 +139,7 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                         val n = v.trim()
                         if (n.isNotEmpty()) { Prefs.name = n; msg = "名称已保存"; onChanged() }
                         nameEditing = false
+                        keyboard?.hide()   // 不收键盘的话它会一直盖住下半屏，回待机页还在
                     },
                     modifier = Modifier.focusRequester(nameBox)
                 )

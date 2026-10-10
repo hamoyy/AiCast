@@ -27,13 +27,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -53,7 +60,35 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
     var cast by remember { mutableStateOf(Prefs.castEnabled) }
     var pwdOn by remember { mutableStateOf(Prefs.mode == "auth") }
     var pwd by remember { mutableStateOf("") }
+    var pwdErr by remember { mutableStateOf<String?>(null) }
     var msg by remember { mutableStateOf<String?>(null) }
+
+    // 焦点：打开密码验证时落到密码框；关闭时把焦点和软键盘一起收掉，
+    // 否则焦点会弹回最上面的设备名称输入框（实测就是这个体验问题）
+    var nameEditing by remember { mutableStateOf(false) }
+    val nameBox = remember { FocusRequester() }
+    val pwdBox = remember { FocusRequester() }
+    val pwdSwitchBox = remember { FocusRequester() }
+    var focusPwd by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(focusPwd) {
+        if (focusPwd) { pwdBox.requestFocus(); focusPwd = false }
+    }
+    // 关闭密码验证后必须**在重组之后**再处理焦点：写在 click 回调里的话，密码框
+    // 还没被移除，等它被移除时系统会做焦点搜索，把焦点塞给最上面的设备名称输入框
+    // （实测就是这么跳的）。这里等重组结束，把焦点明确交给「密码验证」那枚开关 ——
+    // 只是 clearFocus 不够，清完之后系统仍会挑一个默认目标。
+    LaunchedEffect(pwdOn) {
+        if (!pwdOn) {
+            keyboard?.hide()
+            // 密码框被移除的那一帧，系统紧接着会做一次焦点搜索并落到最近的
+            // 可聚焦节点（正好是最上面的设备名称输入框）。等它折腾完再把焦点
+            // 拉回这枚开关，否则我们的 requestFocus 会被随后那次搜索覆盖。
+            delay(120)
+            pwdSwitchBox.requestFocus()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -83,20 +118,130 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
 
+        // 设备名称改成「点一下才编辑」：常驻输入框是个焦点磁铁 —— 一旦别处的
+        // 输入框被移除，系统会做焦点搜索并把光标塞进最上面这个编辑框（关掉
+        // 密码验证时就是这样跳过去的）。改成非编辑态时它压根不是输入框。
         Section("设备名称") {
-            EditRow(
-                value = name,
-                placeholder = "让 agent 知道这是哪台设备",
-                onChange = { name = it },
-                onDone = { v ->
-                    val n = v.trim()
-                    if (n.isNotEmpty()) {
-                        Prefs.name = n
-                        msg = "名称已保存"
+            if (nameEditing) {
+                EditRow(
+                    value = name,
+                    placeholder = "让 agent 知道这是哪台设备",
+                    onChange = { name = it },
+                    onDone = { v ->
+                        val n = v.trim()
+                        if (n.isNotEmpty()) { Prefs.name = n; msg = "名称已保存"; onChanged() }
+                        nameEditing = false
+                    },
+                    modifier = Modifier.focusRequester(nameBox)
+                )
+                Text(
+                    "回车保存 · 点其它空白处收起",
+                    color = textDim, fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                LaunchedEffect(nameEditing) { if (nameEditing) nameBox.requestFocus() }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { nameEditing = true }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(name, color = textMain, fontSize = 16.sp)
+                        Text("点击修改名称", color = textDim, fontSize = 12.sp)
+                    }
+                    Text("修改", color = accent, fontSize = 13.sp)
+                }
+            }
+        }
+
+        // 访问模式放在最上面：投送总开关 + 密码验证，是别人能不能碰这台设备的两道门
+        Section("访问模式") {
+            // ① 投送总开关：关掉只是拒绝投送，设备照样被局域网发现
+            ToggleRow(
+                title = "投送",
+                sub = "关闭后仍可被搜索到，但投送会被拒绝",
+                checked = cast,
+                onToggle = { on ->
+                    Prefs.castEnabled = on
+                    cast = on
+                    onChanged()
+                    msg = if (on) "已开启投送"
+                    else "已关闭投送（设备仍可被发现，但会拒绝投送）"
+                }
+            )
+            Spacer(Modifier.height(14.dp))
+            // ② 密码验证：默认关 = 公开投送；打开才要设密码
+            ToggleRow(
+                title = "密码验证",
+                sub = "关闭 = 公开投送；开启后 agent 需凭密码换 token",
+                focusRequester = pwdSwitchBox,
+                checked = pwdOn,
+                onToggle = { on ->
+                    if (on) {
+                        // 先展开输入框，等点「确认」才真正生效，避免打开即半配置状态
+                        pwdOn = true
+                        pwdErr = null
+                        focusPwd = true          // 焦点落到密码框，别跑去顶部的设备名称
+                        msg = "请输入密码后点确认"
+                    } else {
+                        // 关闭不要求验证旧密码：直接清密码 + 吊销全部 token
+                        Prefs.clearPassword()
+                        Prefs.mode = "public"
+                        mode = "public"
+                        pwdOn = false
+                        pwd = ""
+                        pwdErr = null
                         onChanged()
+                        msg = "已关闭密码验证：密码已清除，全部 token 已吊销"
                     }
                 }
             )
+            if (pwdOn) {
+                Spacer(Modifier.height(12.dp))
+                if (Prefs.hasPassword()) {
+                    Text("已设置密码 ✓（重填即修改）", color = accent, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
+                EditRow(
+                    pwd, "密码（至少 4 位）",
+                    onChange = { pwd = it; pwdErr = null },
+                    password = true,
+                    modifier = Modifier.focusRequester(pwdBox)
+                )
+                // 错误就地提示：只写在页面底部的 msg 会被长列表顶出屏幕，看着像"点了没反应"
+                pwdErr?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = Color(0xFFE58C8C), fontSize = 12.sp)
+                }
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .height(46.dp)
+                        .fillMaxWidth()
+                        .background(accent, RoundedCornerShape(10.dp))
+                        .clickable {
+                            if (pwd.length < 4) {
+                                pwdErr = "密码至少 4 位，当前 ${pwd.length} 位"
+                                msg = "密码太短（至少 4 位）"
+                            } else {
+                                Prefs.setPassword(pwd)   // 内含 revokeAll，旧 token 立即失效
+                                Prefs.mode = "auth"
+                                mode = "auth"
+                                pwd = ""
+                                pwdErr = null
+                                keyboard?.hide()
+                                focus.clearFocus(force = true)
+                                onChanged()
+                                msg = "密码已保存（agent 首次连接需向你索取）"
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) { Text("确认", color = bgDark, fontWeight = FontWeight.Bold) }
+            }
         }
 
         Section("待机主题") {
@@ -121,72 +266,6 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                         msg = "已切换主题：${t.name}"
                     }
                 )
-            }
-        }
-
-        Section("访问模式") {
-            // ① 投送总开关：关掉只是拒绝投送，设备照样被局域网发现
-            ToggleRow(
-                title = "投送",
-                sub = "关闭后仍可被搜索到，但投送会被拒绝",
-                checked = cast,
-                onToggle = { on ->
-                    Prefs.castEnabled = on
-                    cast = on
-                    onChanged()
-                    msg = if (on) "已开启投送"
-                    else "已关闭投送（设备仍可被发现，但会拒绝投送）"
-                }
-            )
-            Spacer(Modifier.height(14.dp))
-            // ② 密码验证：默认关 = 公开投送；打开才要设密码
-            ToggleRow(
-                title = "密码验证",
-                sub = "关闭 = 公开投送；开启后 agent 需凭密码换 token",
-                checked = pwdOn,
-                onToggle = { on ->
-                    if (on) {
-                        // 先展开输入框，等点「确认」才真正生效，避免打开即半配置状态
-                        pwdOn = true
-                        msg = "请输入密码后点确认"
-                    } else {
-                        // 关闭不要求验证旧密码：直接清密码 + 吊销全部 token
-                        Prefs.clearPassword()
-                        Prefs.mode = "public"
-                        mode = "public"
-                        pwdOn = false
-                        pwd = ""
-                        onChanged()
-                        msg = "已关闭密码验证：密码已清除，全部 token 已吊销"
-                    }
-                }
-            )
-            if (pwdOn) {
-                Spacer(Modifier.height(12.dp))
-                if (Prefs.hasPassword()) {
-                    Text("已设置密码 ✓（重填即修改）", color = accent, fontSize = 13.sp)
-                    Spacer(Modifier.height(8.dp))
-                }
-                EditRow(pwd, "密码（至少 4 位）", onChange = { pwd = it }, password = true)
-                Spacer(Modifier.height(10.dp))
-                Box(
-                    modifier = Modifier
-                        .height(46.dp)
-                        .fillMaxWidth()
-                        .background(accent, RoundedCornerShape(10.dp))
-                        .clickable {
-                            if (pwd.length < 4) msg = "密码太短（至少 4 位）"
-                            else {
-                                Prefs.setPassword(pwd)   // 内含 revokeAll，旧 token 立即失效
-                                Prefs.mode = "auth"
-                                mode = "auth"
-                                pwd = ""
-                                onChanged()
-                                msg = "密码已保存（agent 首次连接需向你索取）"
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) { Text("确认", color = bgDark, fontWeight = FontWeight.Bold) }
             }
         }
 
@@ -241,7 +320,8 @@ private fun ToggleRow(
     title: String,
     sub: String,
     checked: Boolean,
-    onToggle: (Boolean) -> Unit
+    onToggle: (Boolean) -> Unit,
+    focusRequester: FocusRequester? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -254,6 +334,8 @@ private fun ToggleRow(
         Switch(
             checked = checked,
             onCheckedChange = onToggle,
+            modifier = if (focusRequester != null) Modifier.focusRequester(focusRequester)
+            else Modifier,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = accent,
                 checkedThumbColor = bgDark,
@@ -271,7 +353,8 @@ private fun EditRow(
     placeholder: String,
     onDone: (String) -> Unit = {},
     onChange: (String) -> Unit = {},
-    password: Boolean = false
+    password: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     TextField(
         value = value,
@@ -286,7 +369,7 @@ private fun EditRow(
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(
             onDone = { onDone(value) }
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = Color(0xFF202730),
             unfocusedContainerColor = Color(0xFF202730),

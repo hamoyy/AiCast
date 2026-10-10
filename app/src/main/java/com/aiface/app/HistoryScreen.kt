@@ -12,10 +12,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -49,14 +54,13 @@ fun HistoryScreen(
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text("投送历史", color = hText, fontSize = titleSize, fontWeight = FontWeight.Bold)
                 Text(
-                    "返回键关闭 · 选中一条重新投到屏幕",
+                    "选中一条重新投到屏幕",
                     color = hDim, fontSize = (cfg.screenWidthDp / 42f).sp
                 )
             }
-            Spacer(Modifier.weight(1f))
             if (entries.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -65,13 +69,33 @@ fun HistoryScreen(
                         .clickable { onClear() }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) { Text("清空", color = hDim, fontSize = 13.sp) }
+                Spacer(Modifier.width(8.dp))
+            }
+            // 和设置页同一枚圆形关闭按钮：不再靠"右滑/返回键"这种没提示的退出方式
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(hCard, CircleShape)
+                    .clip(CircleShape)
+                    .clickable { onBack() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "关闭历史",
+                    tint = hText,
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
         Spacer(Modifier.height(16.dp))
 
         if (entries.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("还没有投送记录\n让 agent 投点东西，或右滑/返回退出", color = hDim, fontSize = 15.sp)
+                Text(
+                    "还没有投送记录\n让 agent 往这台设备投点东西，就会出现在这里",
+                    color = hDim, fontSize = 15.sp
+                )
             }
         } else {
             LazyColumn(

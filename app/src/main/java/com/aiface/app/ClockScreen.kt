@@ -79,7 +79,6 @@ fun aifaceColors() = androidx.compose.material3.darkColorScheme(
 @Composable
 fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
     val cfg = LocalConfiguration.current
-    val openLabels = Prefs.openList().joinToString(" ") { permLabel(it) }
     // 时间字号：横屏按高度收敛（避免大屏字号过大压住日期），竖屏按宽度
     val timeSize = (min(cfg.screenWidthDp / 7f, cfg.screenHeightDp / 6f) * paramsFontMultiplier()).sp
 
@@ -146,9 +145,7 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
                     color = labelColor, fontSize = (cfg.screenWidthDp / 45f).sp
                 )
                 Text(
-                    "ID  ${Prefs.deviceId}    " + if (Prefs.castEnabled)
-                        "开放: ${if (openLabels.isEmpty()) "无" else openLabels}"
-                    else "已关闭投送",
+                    "ID  ${Prefs.deviceId}",
                     color = labelColor, fontSize = (cfg.screenWidthDp / 45f).sp
                 )
             }

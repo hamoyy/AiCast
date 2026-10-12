@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.content.Context
 import android.net.nsd.NsdManager
@@ -6,11 +6,11 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.util.Log
 
-/** NSD/mDNS 广播 _aiface._tcp，TXT 带 name/class/touch/mode/open（§3） */
+/** NSD/mDNS 广播 _aicast._tcp，TXT 带 name/class/touch/mode/open（§3） */
 object NsdAdvertiser {
 
-    const val SERVICE_TYPE = "_aiface._tcp"
-    private const val TAG = "aiface-nsd"
+    const val SERVICE_TYPE = "_aicast._tcp"
+    private const val TAG = "aicast-nsd"
     private var registered = false
     private var listener: NsdManager.RegistrationListener? = null
     private var nsd: NsdManager? = null
@@ -40,7 +40,7 @@ object NsdAdvertiser {
         val mgr = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
         nsd = mgr
         val info = NsdServiceInfo().apply {
-            serviceName = Prefs.name.ifBlank { "aiface" }
+            serviceName = Prefs.name.ifBlank { "AiCast" }
             serviceType = SERVICE_TYPE
             // 端口可能因被占用而顺延，广播实际监听端口（P0-3）
             port = Server.port

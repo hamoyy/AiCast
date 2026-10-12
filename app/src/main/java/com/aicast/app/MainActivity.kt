@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.os.Bundle
 import android.util.TypedValue
@@ -53,14 +53,14 @@ class MainActivity : ComponentActivity() {
         App.ctx = applicationContext
         App.activity = this
         Prefs.init(applicationContext)
-        AifaceService.ensure(applicationContext)
+        AiCastService.ensure(applicationContext)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         applyImmersive()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         setContent {
-            MaterialTheme(colorScheme = aifaceColors()) {
+            MaterialTheme(colorScheme = aiCastColors()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
@@ -279,7 +279,7 @@ class MainActivity : ComponentActivity() {
             settings.loadWithOverviewMode = true
             settings.mediaPlaybackRequiresUserGesture = false
             settings.allowFileAccess = false
-            // 首页 baseURL 是 https://aiface.local，媒体走 http://<ip>:43210/media 属混合内容；
+            // 首页 baseURL 是 https://aicast.local，媒体走 http://<ip>:43210/media 属混合内容；
             // 不放行则 <audio>/<img> 静默加载失败（局域网兜底媒体线的关键一步）
             settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             // 显示面板不是浏览器：禁掉捏合/文本缩放。
@@ -290,12 +290,12 @@ class MainActivity : ComponentActivity() {
             settings.textZoom = 100
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
-            addJavascriptInterface(JsBridge(), "AndroidAiface")
+            addJavascriptInterface(JsBridge(), "AndroidAiCast")
             webChromeClient = object : android.webkit.WebChromeClient() {
                 // 没有 WebChromeClient 时 agent 页面里的 console/alert 全静默丢失，排障全靠猜
                 override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
                     android.util.Log.i(
-                        "aiface-web",
+                        "aicast-web",
                         "[${m.messageLevel()}] ${m.message()} @${m.sourceId()}:${m.lineNumber()}"
                     )
                     return false
@@ -386,7 +386,7 @@ class MainActivity : ComponentActivity() {
 
     private fun injectSdk(view: WebView) {
         try {
-            val text = assets.open("aiface-sdk.js").bufferedReader().use { it.readText() }
+            val text = assets.open("aicast-sdk.js").bufferedReader().use { it.readText() }
             view.evaluateJavascript(text, null)
         } catch (e: Exception) { /* asset 缺失则跳过 */ }
     }

@@ -139,8 +139,8 @@
   tick();
   setInterval(tick, 1000);
 
-  if (typeof Aiface !== 'undefined' && Aiface.emit) {
-    Aiface.emit('demo.dash', { kind: 'home-network', mounted: true });
+  if (typeof AiCast !== 'undefined' && AiCast.emit) {
+    AiCast.emit('demo.dash', { kind: 'home-network', mounted: true });
   }
 
   // 布局自检：电视 WebView 在脚本首次执行时 innerWidth 可能是 0
@@ -162,7 +162,7 @@
       overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       overflowY: document.documentElement.scrollHeight - document.documentElement.clientHeight
     };
-    if (typeof Aiface !== 'undefined' && Aiface.emit) Aiface.emit('demo.layout', info);
+    if (typeof AiCast !== 'undefined' && AiCast.emit) AiCast.emit('demo.layout', info);
   }, 1200);
 </script>
 </body>

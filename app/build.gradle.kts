@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.aiface.app"
+    namespace = "com.aicast.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.aiface.app"
+        applicationId = "com.aicast.app"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

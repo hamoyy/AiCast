@@ -61,7 +61,7 @@
     for (var i = 0; i < ss.length; i++) { ss[i].classList.toggle('on', i === idx); ds[i].classList.toggle('on', i === idx); }
     var tick = ss[idx].querySelector('.tick');
     tick.style.animation = 'none'; void tick.offsetWidth; tick.style.animation = 'run ' + DUR + 'ms linear';
-    Aiface.emit('slide.played', { index: idx, title: SLIDES[idx].k });
+    AiCast.emit('slide.played', { index: idx, title: SLIDES[idx].k });
   }
   next(); setInterval(next, DUR);
 </script>

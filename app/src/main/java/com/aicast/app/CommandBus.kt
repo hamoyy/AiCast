@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.app.Activity
 import android.content.Context
@@ -56,7 +56,7 @@ object CommandBus {
         pendingHtml = null
         val full = embedSdk(html)
         // baseURL 不能为 null：opaque origin 下页面访问 localStorage 会抛 SecurityError
-        main.post { App.webView?.loadDataWithBaseURL("https://aiface.local/", full, "text/html", "UTF-8", null) }
+        main.post { App.webView?.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null) }
         return true
     }
 
@@ -68,7 +68,7 @@ object CommandBus {
             if (pendingHtml == null) return@post
             pendingHtml = null
             lastHtml = html; currentUrl = null
-            wv.loadDataWithBaseURL("https://aiface.local/", embedSdk(html), "text/html", "UTF-8", null)
+            wv.loadDataWithBaseURL("https://aicast.local/", embedSdk(html), "text/html", "UTF-8", null)
         }
     }
 
@@ -82,17 +82,17 @@ object CommandBus {
         lastHtml = null; currentUrl = null
         val full = embedSdk(html) +
             "<style>html,body{overflow:hidden!important}</style>"
-        main.post { App.webView?.loadDataWithBaseURL("https://aiface.local/", full, "text/html", "UTF-8", null) }
+        main.post { App.webView?.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null) }
     }
 
-    // 页面脚本在解析期就可能调用 Aiface，而 evaluateJavascript 要到 onPageFinished
+    // 页面脚本在解析期就可能调用 AiCast，而 evaluateJavascript 要到 onPageFinished
     // 才执行——因此内联投送时必须把 SDK 先嵌进 HTML 头部。
     private var sdkCache: String? = null
 
     private fun sdkText(): String =
         sdkCache ?: run {
             val s = try {
-                App.ctx.assets.open("aiface-sdk.js").bufferedReader().use { it.readText() }
+                App.ctx.assets.open("aicast-sdk.js").bufferedReader().use { it.readText() }
             } catch (e: Exception) { "" }
             sdkCache = s
             s
@@ -130,7 +130,7 @@ object CommandBus {
         val payload = el.toString()
         main.post {
             App.webView?.evaluateJavascript(
-                "window.dispatchEvent(new CustomEvent('aiface-message',{detail:$payload}))", null
+                "window.dispatchEvent(new CustomEvent('aicast-message',{detail:$payload}))", null
             )
         }
         return true
@@ -156,7 +156,7 @@ object CommandBus {
     private val events = kotlin.collections.ArrayDeque<Ev>()
 
     /** seq 落盘：进程重启也不回退，agent 的 since 不会被"回到 0"卡死（P0-2） */
-    private fun seqSp() = App.ctx.getSharedPreferences("aiface_events", Context.MODE_PRIVATE)
+    private fun seqSp() = App.ctx.getSharedPreferences("aicast_events", Context.MODE_PRIVATE)
 
     private fun nextSeq(): Long {
         val sp = seqSp()
@@ -255,7 +255,7 @@ object Ui {
 
     /** 冷启动/重建后回放持久化的亮度，避免界面与 /param 报告不一致 */
     fun applyPersistedBrightness(a: Activity) {
-        val v = App.ctx.getSharedPreferences("aiface_params", Context.MODE_PRIVATE)
+        val v = App.ctx.getSharedPreferences("aicast_params", Context.MODE_PRIVATE)
             .getString("brightness", "auto") ?: "auto"
         setWindowBrightness(a, v.toFloatOrNull())
     }
@@ -289,7 +289,7 @@ object HomeRefresh {
 
 /** app 参数控制（§6.1/§7 子集：亮度/主题/字号/音量） */
 object Params {
-    private val sp get() = App.ctx.getSharedPreferences("aiface_params", Context.MODE_PRIVATE)
+    private val sp get() = App.ctx.getSharedPreferences("aicast_params", Context.MODE_PRIVATE)
     @Volatile var lastDbg = ""
         private set
 

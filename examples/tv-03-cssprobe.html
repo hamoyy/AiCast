@@ -146,8 +146,8 @@
     '<tr><td class="k">DPR</td><td class="v">' + (window.devicePixelRatio || 1) + '</td></tr>' +
     '<tr><td class="k">touch</td><td class="v">' + ('ontouchstart' in window ? '是' : '否') + '</td></tr>';
 
-  if (typeof Aiface !== 'undefined' && Aiface.emit) {
-    Aiface.emit('demo.probe', { ua: ua, viewport: window.innerWidth + 'x' + window.innerHeight, supports: res });
+  if (typeof AiCast !== 'undefined' && AiCast.emit) {
+    AiCast.emit('demo.probe', { ua: ua, viewport: window.innerWidth + 'x' + window.innerHeight, supports: res });
   }
 </script>
 </body>

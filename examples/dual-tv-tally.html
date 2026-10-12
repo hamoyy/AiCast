@@ -99,7 +99,7 @@
   ];
   var focus = 0, paused = false, timer = null;
 
-  function emit(n, d){ if (typeof Aiface !== 'undefined' && Aiface.emit) Aiface.emit(n, d || {}); }
+  function emit(n, d){ if (typeof AiCast !== 'undefined' && AiCast.emit) AiCast.emit(n, d || {}); }
 
   var rowsBox = document.getElementById('rows');
   rowsBox.innerHTML = OPTIONS.map(function(o, i){
@@ -161,8 +161,8 @@
   });
 
   // 关键：接收 agent 从手机端转发过来的投票增量
-  if (typeof Aiface !== 'undefined' && Aiface.onMessage) {
-    Aiface.onMessage(function(m){
+  if (typeof AiCast !== 'undefined' && AiCast.onMessage) {
+    AiCast.onMessage(function(m){
       if (!m) return;
       if (m.action === 'vote' && m.id) {
         var t = null;

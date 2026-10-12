@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import org.json.JSONArray
 import org.json.JSONObject

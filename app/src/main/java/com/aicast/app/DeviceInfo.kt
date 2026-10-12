@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -77,7 +77,7 @@ object DeviceInfo {
                 "accepting" to JsonPrimitive(accepting),
                 *if (accepting) emptyArray() else arrayOf(
                     "acceptingHint" to JsonPrimitive(
-                        "该设备已关闭投送开关。请让用户在设备上打开 aiface → 访问模式 → 投送，然后再试。"
+                        "该设备已关闭投送开关。请让用户在设备上打开「爱投屏」→ 访问模式 → 投送，然后再试。"
                     )
                 ),
                 "open" to JsonArray(Prefs.openList().map { JsonPrimitive(it) }),

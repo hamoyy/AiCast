@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 从设备上正在运行的 aiface 里取一个有效 token，写进 ~/.aiface/devices.json。
+# 从设备上正在运行的 AiCast 里取一个有效 token，写进 ~/.aicast/devices.json。
 #
 #   用法: ./scripts/adb-token.sh [设备号]        # adb devices 只连了一台时可省略
 #         ./scripts/adb-token.sh --show         # 只打印不写入
 #
 # 什么时候用：
-#   ① 不知道上层设置的密码，又要跑 smoke.sh / verify-fixes.sh / aiface CLI；
+#   ① 不知道上层设置的密码，又要跑 smoke.sh / verify-fixes.sh / aicast CLI；
 #   ② 「明明昨天还通」突然 401 —— 多半是 token 被 Auth.issue() 淘汰了（见 Auth.kt）。
 #
 # 前提（和本项目其它真机脚本一样）：
@@ -13,9 +13,9 @@
 #   · Git Bash 下必须先 export MSYS_NO_PATHCONV=1，否则 /data/... 会被改成 Windows 路径
 set -u
 
-PKG="com.aiface.app"
-PREF="/data/user/0/$PKG/shared_prefs/aiface_auth.xml"
-STORE="${HOME}/.aiface/devices.json"
+PKG="com.aicast.app"
+PREF="/data/user/0/$PKG/shared_prefs/aicast_auth.xml"
+STORE="${HOME}/.aicast/devices.json"
 
 WRITE=1
 DEV=""
@@ -56,7 +56,7 @@ const id = process.env.DEVICE_ID
   || ids.find(k => j.devices[k].token)   // 之前持过 token 的那个
   || ids[0];
 if (!id || !j.devices[id]) {
-  console.error("devices.json 里没有设备，先跑: node skill/bin/aiface register <ip:port>");
+  console.error("devices.json 里没有设备，先跑: node skill/bin/aicast register <ip:port>");
   process.exit(1);
 }
 j.devices[id].token = process.env.TOK;

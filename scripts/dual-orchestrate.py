@@ -10,6 +10,7 @@
   python scripts/dual-orchestrate.py --seconds 30
 """
 import json
+import os
 import subprocess
 import sys
 import time
@@ -19,16 +20,18 @@ import urllib.request
 PHONE = "dev_4dfd12b8"          # Xiaomi Mi 10 · touch · auth 模式
 TV = "dev_3262e229"             # MiTV-MFTP0 · remote · public 模式
 PHONE_SERIAL = "14444ae5"       # 手机的 adb  serial，仅 --auto 模拟点按时用到
-EX = "C:/Users/wapse/Documents/code/aiface/examples"
-APK_ROOT = "C:/Users/wapse/Documents/code/aiface"
+
+# 路径一律相对本脚本推导，仓库目录叫什么名字都不影响
+APK_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+EX = os.path.join(APK_ROOT, "examples")
 DEBUG = False
 ADB = r"C:\Users\wapse\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-CLI = ["node", "C:/Users/wapse/Documents/code/aiface/skill/bin/aiface"]
+CLI = ["node", os.path.join(APK_ROOT, "skill", "bin", "aicast")]
 
 
 def run(args, **kw):
     return subprocess.run(CLI + args, capture_output=True, text=True,
-                          encoding="utf-8", cwd="C:/Users/wapse/Documents/code/aiface", **kw)
+                          encoding="utf-8", cwd=APK_ROOT, **kw)
 
 
 def cli_json(args):

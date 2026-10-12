@@ -1,21 +1,28 @@
-# aiface
+# AiCast（爱投屏）
 
 把闲置手机 / 平板 / Android TV 变成 AI 的窗口：局域网内投送任意 HTML、读取设备画像、控制显示。
 **无中间件、无长连接、单向（agent → app）、即用即开。**
 
 > 设计文档见 [docs/DESIGN.md](docs/DESIGN.md)（当前 v7）。本仓库处于 **M1**：app 内置 server 骨架。
 
-## 当前状态（M1）
+> 中文名「爱投屏」，命令行与包名一律用 `AiCast` / `com.aicast.app`。
+
+## 当前状态
 
 | 已实现 | 计划中 |
 |---|---|
-| ✅ Ktor 内置 HTTP server（端口 43210） | ⏳ 密码鉴权 `/auth`（M3） |
-| ✅ `/health` `/info`（完整设备画像） | ⏳ 设置页：命名/模式/权限开关（M2） |
-| ✅ `/render`（HTML/URL/回待机） | ⏳ 双向 `wait_for_event` 打磨、截图（M5） |
-| ✅ `/message`（JS 桥增量注入） | ⏳ 系统控制 TTS/手电等（M7） |
-| ✅ `/param` `/state` `/events`(long-poll) | ⏳ 屏幕/作息定时（M8） |
-| ✅ JS SDK `window.Aiface`（含遥控按键上报） | |
-| ✅ mDNS 广播 `_aiface._tcp`（TXT 带画像摘要） | |
+| ✅ Ktor 内置 HTTP server（端口 43210，占用顺延） | ⏳ 截图回传（M5） |
+| ✅ `/health` `/info`（完整设备画像 + `accepting` 总开关声明） | ⏳ 系统控制 TTS/手电等（M7） |
+| ✅ `/auth`（密码换 30 天 token，连错 5 次锁 60s，计数落盘） | ⏳ 屏幕/作息定时（M8） |
+| ✅ `/render`（HTML/URL/回待机；界面不在前台时 202 排队） | |
+| ✅ `/message`（JS 桥增量注入） | |
+| ✅ `/param`（`brightness`/`theme`/`fontScale`/`volume` 四键）`/state` `/events`(long-poll) | |
+| ✅ `/themes` `POST /theme` `DELETE /theme`（待机主题：内置 + agent 注册） | |
+| ✅ `/media` 上传 + Range 流式播放（32MB 环形配额 + 72h TTL） | |
+| ✅ `/history` 投送历史 | |
+| ✅ JS SDK `window.AiCast`（含遥控按键上报） | |
+| ✅ mDNS 广播 `_aicast._tcp`（TXT 带 deviceId/class/touch/mode/accepting/open） | |
+| ✅ 设置页：名称 / 待机主题 / 访问模式（投送总开关 + 密码）/ 本机信息 | |
 | ✅ 前台 Service + WakeLock（开机自启尽力而为：MIUI TV 实测拦截三方自启，重启后手动打开一次即可） | |
 | ✅ 待机时钟大屏（Compose 响应式） | |
 
@@ -26,12 +33,12 @@
 1. 用 Android Studio 打开本目录（会自动生成 gradle wrapper）。
 2. 连接手机（开发者选项 → USB 调试）→ Run ▶ 安装 `app`。
    - 或命令行：`./gradlew :app:assembleDebug`，产物 `app/build/outputs/apk/debug/app-debug.apk`，`adb install -r <apk>`。
-3. 手机上打开 aiface → 显示待机时钟大屏（顶栏名称+公开徽标，底栏 IP/ID/开放权限）。
+3. 手机上打开「爱投屏」→ 显示待机时钟大屏（顶栏名称+公开徽标，底栏 IP/ID/开放权限）。
 4. 首次运行点「允许通知」权限（前台服务需要，Android 13+）。
 
 > 签名：debug/release 暂借用本机 `~/.android/debug.keystore`（Studio 首次构建自动生成）。没有该文件时先在 Studio 里构建一次，或删掉 `app/build.gradle.kts` 里的 `signingConfigs` 用默认 debug 签名。
 
-## M1 验收（手机与电脑同一 WiFi）
+## 快速验证（手机与电脑同一 WiFi）
 
 ```bash
 # 把 <IP> 换成待机页底栏显示的 IP
@@ -54,18 +61,34 @@ curl "http://<IP>:43210/events?since=0&timeout=2"   # → [{"seq":...,"kind":"pa
 # 增量消息（页面会显示收到的 JSON）
 curl -X POST http://<IP>:43210/message -H 'Content-Type: application/json' -d '{"html":"<b>hello</b>"}'
 
-# 改亮度（默认未开放 param → 应返回 403 permission_denied；这正是逐项权限的验证）
+# 改亮度（param 常开，公开模式也可直接调）
 curl -X POST http://<IP>:43210/param -H 'Content-Type: application/json' -d '{"key":"brightness","value":"0.3"}'
+
+# 想验证权限拦截：在设备上关掉「访问模式 → 投送」，再投一次
+curl -X POST http://<IP>:43210/render -H 'Content-Type: application/json' -d '{"html":"<b>hi</b>"}'
+# → 403 {"ok":false,"code":"cast_disabled","message":"该设备已关闭投送开关…"}
 ```
 
-预期：待机页 → 投送后显示卡片 → 点按钮事件进 `/events` → `/param` 演示逐项权限拦截。
+预期：待机页 → 投送后显示卡片 → 点按钮事件进 `/events` → 关掉投送总开关后 `/render` 被 403 拦下。
+
+## 用 CLI 投送（推荐）
+
+```bash
+A="node skill/bin/aicast"
+$A discover                                   # mDNS 发现（带画像摘要 + accepting）
+$A info <dev>                                 # 取完整画像 —— 生成内容前必做
+$A render <dev> --html-file page.html --wake  # 投送（中文内容必须先写 UTF-8 文件）
+$A events <dev> --since 0                     # 拉页面回传的交互事件
+```
+
+设备清单与 token 存在 `~/.aicast/devices.json`。详细铁律见 [skill/SKILL.md](skill/SKILL.md)。
 
 ## 目录
 
 ```
 app/        Android（Kotlin + Compose + Ktor + WebView）
 examples/   演示 HTML（非协议内容，agent 可自由仿写）
-skill/      aiface Skill（CLI 形态，M4 实现）
+skill/      AiCast Skill（CLI 形态，M4 实现）
 protocol/   REST/事件 schema（M3 固化）
 docs/       DESIGN.md
 ```

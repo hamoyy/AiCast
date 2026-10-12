@@ -1,15 +1,15 @@
-// aiface 通用 JS SDK —— 唯一的"框架"，只做通信桥，不含内容逻辑（docs/DESIGN.md §9）
+// AiCast（爱投屏）通用 JS SDK —— 唯一的"框架"，只做通信桥，不含内容逻辑（docs/DESIGN.md §9）
 (function () {
-  if (window.Aiface) return;
+  if (window.AiCast) return;
 
   function emit(type, data) {
     try {
-      AndroidAiface.emit(type, JSON.stringify(data === undefined ? null : data));
-    } catch (e) { console.warn('Aiface.emit failed', e); }
+      AndroidAiCast.emit(type, JSON.stringify(data === undefined ? null : data));
+    } catch (e) { console.warn('AiCast.emit failed', e); }
   }
 
   var listeners = [];
-  window.addEventListener('aiface-message', function (ev) {
+  window.addEventListener('aicast-message', function (ev) {
     listeners.forEach(function (cb) { try { cb(ev.detail); } catch (e) { console.error(e); } });
   });
   function onMessage(cb) { listeners.push(cb); return function () { listeners = listeners.filter(function (f) { return f !== cb; }); }; }
@@ -17,12 +17,12 @@
   function getInfo() {
     return new Promise(function (resolve) {
       setTimeout(function () {
-        try { resolve(JSON.parse(AndroidAiface.getInfo())); } catch (e) { resolve(null); }
+        try { resolve(JSON.parse(AndroidAiCast.getInfo())); } catch (e) { resolve(null); }
       }, 0);
     });
   }
 
-  window.Aiface = { emit: emit, onMessage: onMessage, getInfo: getInfo };
+  window.AiCast = { emit: emit, onMessage: onMessage, getInfo: getInfo };
 
   // 遥控器/键盘按键也作为事件上报（TV 场景 agent 可感知选台/确认键）
   // Android D-pad 进入 WebView 后映射为方向键/回车：19-23 为原生 keyCode，37-40/13 为 Chromium 映射值

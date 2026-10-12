@@ -131,7 +131,7 @@
   var dots = dotsBox.children;
 
   function emit(n, data) {
-    if (typeof Aiface !== 'undefined' && Aiface.emit) Aiface.emit(n, data || {});
+    if (typeof AiCast !== 'undefined' && AiCast.emit) AiCast.emit(n, data || {});
   }
 
   function tick() {

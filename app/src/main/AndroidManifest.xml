@@ -22,7 +22,7 @@
         android:label="@string/app_name"
         android:icon="@drawable/ic_launcher"
         android:banner="@drawable/ic_launcher"
-        android:theme="@style/Theme.Aiface"
+        android:theme="@style/Theme.AiCast"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
 
@@ -41,7 +41,7 @@
         </activity>
 
         <service
-            android:name=".AifaceService"
+            android:name=".AiCastService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property

@@ -2,7 +2,7 @@
 
 agent 生成投送内容时优先复制对应模板再填充（见 SKILL.md「模板脚手架」节）。
 模板遵守同一铁律：HTML 本体单文件（CSS/JS 内联，设备默认可联网、可引外链真图/CDN）、`viewport-fit=cover`、`env(safe-area-inset-*)` 避让挖孔/刘海、
-通过内置 `Aiface` SDK 回传事件。样式为深色高对比基线，可按 `info` 里的 `appearance.darkMode` 反转。
+通过内置 `AiCast` SDK 回传事件。样式为深色高对比基线，可按 `info` 里的 `appearance.darkMode` 反转。
 
 「回传事件」列可直接用于 `$A events` 过滤。
 **命名规则：事件名务必带点号**（`todo.toggle` 而非 `toggle`），且不要以
@@ -18,7 +18,7 @@ agent 生成投送内容时优先复制对应模板再填充（见 SKILL.md「�
 | `remote-briefing.html` ★TV 实测效果佳 | remote · 电视 | 自动轮播 + 遥控器接管：◀▶ 翻页、OK 暂停/继续（左下角"已暂停"标签 + 帮助条 + 顶部进度条）；`SLIDES` 数组填充 | `slide.played{by:"auto"\|"nav"}`、`remote.pause` |
 | `lunch-roulette-touch.html` | touch · 手机竖屏 | 老虎机式随机选择小游戏（示例"中午吃什么"）：点卡片/按钮滚动、再点停、锁定；替换 `FOODS` 数组即可复用为任意"随机抽一个"决策器；**注意变量勿叫 `name`**（与 `window.name` 冲突会静默失效） | `lunch.spin`、`lunch.pick` |
 | `lunch-roulette-tv.html` ★TV 实测效果佳 | remote · 电视 | 同游戏的遥控版：进页面 1.2s 自动摇一次当吸引演示；OK 摇/停、↑ 锁定、↓ 再摇；底部键位提示条；`FOODS` 数组填充；CSS 按 Chromium 66 基线 | `lunch.spin{by:"tv"}`、`lunch.pick{by:"tv"}` |
-| `audio-player-tv.html` ★TV 出声实测通过 | remote / auto · 电视或大屏 | 音频播放页：`<audio>` 播真音轨（示例为 Wikimedia Commons 公版德彪西《月光》录音，只用公版/CC 音轨并标注来源）；进页试播、被拦等 OK/点击；进度条+时长；OK 暂停/恢复。已知坑：旧 TV WebView 别用 WebAudio 现场合成（出噪音）、`<audio>` 勿加 `crossorigin`、mp3 最稳；外链不通时用 `aiface media` 把音频传到播放它的那台设备、或压小后 data URI 内嵌（详见 SKILL.md「音频投送」） | `track.play{src\|auto}`、`track.pause{at}`、`track.ended`、`track.error` |
+| `audio-player-tv.html` ★TV 出声实测通过 | remote / auto · 电视或大屏 | 音频播放页：`<audio>` 播真音轨（示例为 Wikimedia Commons 公版德彪西《月光》录音，只用公版/CC 音轨并标注来源）；进页试播、被拦等 OK/点击；进度条+时长；OK 暂停/恢复。已知坑：旧 TV WebView 别用 WebAudio 现场合成（出噪音）、`<audio>` 勿加 `crossorigin`、mp3 最稳；外链不通时用 `aicast media` 把音频传到播放它的那台设备、或压小后 data URI 内嵌（详见 SKILL.md「音频投送」） | `track.play{src\|auto}`、`track.pause{at}`、`track.ended`、`track.error` |
 
 ★ 参考截图：`examples/remote-briefing-tv.png`（小米电视 1080p 实机画面，暂停态）。
 

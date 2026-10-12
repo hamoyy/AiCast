@@ -42,8 +42,8 @@
         t.classList.toggle('on', done[k]);
         var n = 0; for (var j in done) if (done[j]) n++;
         document.getElementById('foot').textContent = n === tasks.length ? '🎉 全部完成，电视那边会知道' : '已完成 ' + n + ' / ' + tasks.length;
-        Aiface.emit('routine.done', { key: k, on: done[k], count: n });
-        if (n === tasks.length) Aiface.emit('routine.allDone', {});
+        AiCast.emit('routine.done', { key: k, on: done[k], count: n });
+        if (n === tasks.length) AiCast.emit('routine.allDone', {});
       };
     })(tasks[i]);
   }

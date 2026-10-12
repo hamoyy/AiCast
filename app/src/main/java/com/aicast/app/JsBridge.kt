@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.webkit.JavascriptInterface
 import kotlinx.serialization.json.Json

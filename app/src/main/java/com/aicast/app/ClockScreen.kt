@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -63,7 +63,7 @@ private val dateFmt = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.CHINA)
 private val clockFont = FontFamily(Font(R.font.jetbrains_mono_extrabold))
 
 @Composable
-fun aifaceColors() = androidx.compose.material3.darkColorScheme(
+fun aiCastColors() = androidx.compose.material3.darkColorScheme(
     // 纯黑底：AMOLED 上黑像素子像素直接熄灭，待机常亮更省电
     background = Color.Black,
     surface = Color.Black,

@@ -101,7 +101,7 @@ function show(f){emoji.textContent=f.e;nameEl.textContent=f.n;memo.textContent="
 function stop(){
   spinning=false;clearInterval(timer);card.className="card";
   go.textContent="再摇一次";hint.textContent="满意就按「就它了」，不满意继续摇";
-  Aiface.emit("lunch.spin",{food:cur.n});
+  AiCast.emit("lunch.spin",{food:cur.n});
 }
 function start(){
   if(locked){reset();}
@@ -117,7 +117,7 @@ function pick(){
   if(!cur||spinning)return;
   locked=true;lock.className="on";lock.textContent="已锁定 ✓";
   picked.textContent="午饭就它了："+cur.n+" "+cur.e;
-  Aiface.emit("lunch.pick",{food:cur.n,memo:cur.m});
+  AiCast.emit("lunch.pick",{food:cur.n,memo:cur.m});
 }
 card.onclick=start;go.onclick=start;lock.onclick=pick;
 </script>

@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.content.Context
 import java.security.SecureRandom
@@ -19,7 +19,7 @@ object Auth {
     private const val WRONG_WINDOW_MS = 10 * 60 * 1000L
     private const val MAX_ACTIVE_TOKENS = 32
 
-    private fun sp() = App.ctx.getSharedPreferences("aiface_auth", Context.MODE_PRIVATE)
+    private fun sp() = App.ctx.getSharedPreferences("aicast_auth", Context.MODE_PRIVATE)
 
     /** @property exp 过期时刻 @property iat 签发时刻 */
     private data class Session(val exp: Long, val iat: Long)

@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

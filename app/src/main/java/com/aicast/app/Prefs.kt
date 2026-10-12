@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -27,7 +27,7 @@ object Prefs {
     private val alwaysOpen = listOf("message", "param")
 
     fun init(c: Context) {
-        sp = c.getSharedPreferences("aiface", Context.MODE_PRIVATE)
+        sp = c.getSharedPreferences("aicast", Context.MODE_PRIVATE)
     }
 
     val deviceId: String

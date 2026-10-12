@@ -56,10 +56,10 @@
     var tick = ss[idx].querySelector('.tick');
     tick.style.animation = 'none'; void tick.offsetWidth;
     tick.style.animation = 'run ' + DUR + 'ms linear'; tick.style.animationPlayState = paused ? 'paused' : 'running';
-    Aiface.emit('tv.broadcast', { index: idx, title: SLIDES[idx].h, by: by });
+    AiCast.emit('tv.broadcast', { index: idx, title: SLIDES[idx].h, by: by });
   }
   function restart(){ if (window.t) clearInterval(window.t); window.t = setInterval(function(){ if (!paused) show(idx+1, 'auto'); }, DUR); }
-  function setPaused(p){ paused = p; document.body.classList.toggle('paused', p); Aiface.emit('remote.pause', { paused: p }); }
+  function setPaused(p){ paused = p; document.body.classList.toggle('paused', p); AiCast.emit('remote.pause', { paused: p }); }
   document.addEventListener('keydown', function(e){
     var k = e.keyCode;
     if (k === 37 || k === 38) { show(idx-1, 'nav'); restart(); e.preventDefault(); }

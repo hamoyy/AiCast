@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -23,7 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 前台保活 service：常驻 HTTP server + NSD 广播 + 常亮 wake lock */
-class AifaceService : Service() {
+class AiCastService : Service() {
 
     private var wake: PowerManager.WakeLock? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -35,11 +35,11 @@ class AifaceService : Service() {
         Prefs.init(applicationContext)
         startInForeground()
         if (!Server.isRunning() && !Server.start()) {
-            android.util.Log.e("aiface", "server 启动失败：${Server.lastError}")
+            android.util.Log.e("aicast", "server 启动失败：${Server.lastError}")
         }
         NsdAdvertiser.advertise(applicationContext)
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "aiface:keep")
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "aicast:keep")
             .apply { setReferenceCounted(false); acquire() }
         Media.prune() // 过期媒体在非写入路径上永远不会被清理，启动时理一次
         startNetWatch()
@@ -103,7 +103,7 @@ class AifaceService : Service() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel(channelId, "aiface 运行中", NotificationManager.IMPORTANCE_MIN)
+                NotificationChannel(channelId, "爱投屏 运行中", NotificationManager.IMPORTANCE_MIN)
             )
         }
         val pi = PendingIntent.getActivity(
@@ -112,7 +112,7 @@ class AifaceService : Service() {
         )
         val notif: Notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("aiface")
+            .setContentTitle("爱投屏")
             .setContentText("${Net.localIp()}:${Server.port}")
             .setContentIntent(pi)
             .setOngoing(true)
@@ -137,7 +137,7 @@ class AifaceService : Service() {
         )
         val notif = NotificationCompat.Builder(this, "core")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("aiface")
+            .setContentTitle("爱投屏")
             .setContentText(text)
             .setContentIntent(pi)
             .setOngoing(true)
@@ -147,7 +147,7 @@ class AifaceService : Service() {
 
     companion object {
         fun ensure(ctx: Context) {
-            val i = Intent(ctx, AifaceService::class.java)
+            val i = Intent(ctx, AiCastService::class.java)
             runCatching {
                 if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
             }
@@ -161,7 +161,7 @@ class BootReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
             Intent.ACTION_BOOT_COMPLETED,
-            Intent.ACTION_MY_PACKAGE_REPLACED -> AifaceService.ensure(ctx)
+            Intent.ACTION_MY_PACKAGE_REPLACED -> AiCastService.ensure(ctx)
         }
     }
 

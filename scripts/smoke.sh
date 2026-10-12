@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# aiface 协议冒烟脚本（对真机跑一遍 §5 端点）
+# AiCast 协议冒烟脚本（对真机跑一遍 §5 端点）
 #   用法: ./scripts/smoke.sh <ip[:port]> [token]
 #   无 token 时只跑公开部分（health/info）
 # 需要：curl、python3

@@ -47,12 +47,12 @@
     <div id="foot"></div>
   </div>
 <script>
-  var KEY = 'aiface-demo-todo-v1';
+  var KEY = 'aicast-demo-todo-v1';
   var items = JSON.parse(localStorage.getItem(KEY) || 'null') || [
     { id:'t1', text:'回复产品评审意见', done:false, tag:'工作' },
     { id:'t2', text:'给绿植浇水',       done:false, tag:'家' },
     { id:'t3', text:'散步 30 分钟',     done:false, tag:'健康' },
-    { id:'t4', text:'整理 aiface M4 需求', done:false, tag:'项目' }
+    { id:'t4', text:'整理 AiCast M4 需求', done:false, tag:'项目' }
   ];
   document.getElementById('date').textContent = new Date().toLocaleDateString('zh-CN', { month:'long', day:'numeric', weekday:'long' });
 
@@ -73,12 +73,12 @@
   function toggle(it){
     it.done = !it.done; render();
     log(it.done ? '已勾选「' + it.text + '」→ 事件已回传' : '已取消「' + it.text + '」');
-    Aiface.emit('todo.toggle', { id:it.id, text:it.text, done:it.done });
-    if (items.length && items.every(function(i){return i.done;})) Aiface.emit('todo.allDone', { count:items.length });
+    AiCast.emit('todo.toggle', { id:it.id, text:it.text, done:it.done });
+    if (items.length && items.every(function(i){return i.done;})) AiCast.emit('todo.allDone', { count:items.length });
   }
   function log(t){ document.getElementById('foot').textContent = t; }
 
-  Aiface.onMessage(function(m){
+  AiCast.onMessage(function(m){
     if (!m) return;
     if (m.action === 'add' && m.text) { items.push({ id:'m'+Date.now(), text:m.text, done:false, tag:m.tag||'新增' }); render(); log('agent 新增了一项：' + m.text); }
     if (m.action === 'clear') { items.forEach(function(i){i.done=false;}); render(); log('agent 重置了勾选'); }

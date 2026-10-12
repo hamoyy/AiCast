@@ -89,7 +89,7 @@
   var mine = null;
   var list = document.getElementById('list');
 
-  function emit(n, d){ if (typeof Aiface !== 'undefined' && Aiface.emit) Aiface.emit(n, d || {}); }
+  function emit(n, d){ if (typeof AiCast !== 'undefined' && AiCast.emit) AiCast.emit(n, d || {}); }
 
   function maxCount(){
     return OPTIONS.reduce(function(m, o){ return Math.max(m, o.count); }, 0) || 1;
@@ -139,8 +139,8 @@
     emit('vote.cast', { id:add.id, name:add.n, count:add.count, prev:sub ? sub.id : null });
   });
 
-  if (typeof Aiface !== 'undefined' && Aiface.onMessage) {
-    Aiface.onMessage(function(m){
+  if (typeof AiCast !== 'undefined' && AiCast.onMessage) {
+    AiCast.onMessage(function(m){
       if (!m) return;
       if (m.action === 'tally' && m.list) {
         m.list.forEach(function(u){
@@ -162,7 +162,7 @@
   // 布局自检：把每张卡片的中心点连同溢出量回传，agent 侧据此精确模拟点按
   // （本机 dpr 2.75，adb input tap 要用物理像素 = CSS 坐标 × dpr）
   setTimeout(function () {
-    if (typeof Aiface === 'undefined' || !Aiface.emit) return;
+    if (typeof AiCast === 'undefined' || !AiCast.emit) return;
     var taps = {};
     var cards = document.querySelectorAll('.card');
     for (var i = 0; i < cards.length; i++) {

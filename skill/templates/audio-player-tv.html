@@ -80,7 +80,7 @@ var au=document.getElementById("au"),gate=document.getElementById("gate"),
     tCur=document.getElementById("tCur"),tDur=document.getElementById("tDur"),
     gateTitle=document.getElementById("gateTitle"),gateHint=document.getElementById("gateHint");
 var started=false,finished=false;
-function emit(k,d){if(window.Aiface&&Aiface.emit)Aiface.emit(k,d);}
+function emit(k,d){if(window.AiCast&&AiCast.emit)AiCast.emit(k,d);}
 
 function fmt(t){if(!isFinite(t))return"--:--";var m=Math.floor(t/60),s=Math.floor(t%60);
   return m+(s<10?":0":":")+s;}

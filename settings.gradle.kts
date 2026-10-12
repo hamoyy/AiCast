@@ -18,5 +18,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "aiface"
+rootProject.name = "AiCast"
 include(":app")

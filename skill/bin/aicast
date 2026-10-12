@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 /*
- * aiface CLI —— agent 端与 aiface 设备通信的唯一入口（零依赖，Node 18+）
- * 协议对齐 docs/DESIGN.md §5/§6；设备配置长期保存于 ~/.aiface/devices.json
+ * AiCast（爱投屏）CLI —— agent 端与 AiCast 设备通信的唯一入口（零依赖，Node 18+）
+ * 协议对齐 docs/DESIGN.md §5/§6；设备配置长期保存于 ~/.aicast/devices.json
  *
  * 用法:
- *   aiface discover [--timeout 3000] [--address ip:port]
- *   aiface list
- *   aiface auth   <dev> --password <pwd>
- *   aiface info   <dev>
- *   aiface render <dev> (--html-file f.html | --html "<html>" | --url <u> | --clear) [--wake]
- *   aiface message <dev> (--data '<json>' | --data-file f.json)
- *   aiface events <dev> [--since N] [--timeout 25] [--follow]
- *   aiface state  <dev>
- *   aiface param  <dev> <key> [value]
- *   aiface themes <dev>                                   # 列出可选/已注册主题 + 当前项
- *   aiface theme  <dev> <id>                              # 激活某主题为待机首页
- *   aiface theme  <dev> --register (--html-file f | --html "<h>") [--name N] [--id ID] [--activate]
- *   aiface theme  <dev> --remove <id>                     # 删除 agent 注册的自定义主题
- *   aiface media  <dev> <file> [--name n]                 # 上传媒体（音频等）到设备，返回可嵌入 URL
- *   aiface media  <dev> --list                            # 列出设备上的媒体项
- *   aiface media  <dev> --remove <id>                     # 删除设备上的媒体
- *   aiface forget <dev>
+ *   aicast discover [--timeout 3000] [--address ip:port]
+ *   aicast list
+ *   aicast auth   <dev> --password <pwd>
+ *   aicast info   <dev>
+ *   aicast render <dev> (--html-file f.html | --html "<html>" | --url <u> | --clear) [--wake]
+ *   aicast message <dev> (--data '<json>' | --data-file f.json)
+ *   aicast events <dev> [--since N] [--timeout 25] [--follow]
+ *   aicast state  <dev>
+ *   aicast param  <dev> <key> [value]
+ *   aicast themes <dev>                                   # 列出可选/已注册主题 + 当前项
+ *   aicast theme  <dev> <id>                              # 激活某主题为待机首页
+ *   aicast theme  <dev> --register (--html-file f | --html "<h>") [--name N] [--id ID] [--activate]
+ *   aicast theme  <dev> --remove <id>                     # 删除 agent 注册的自定义主题
+ *   aicast media  <dev> <file> [--name n]                 # 上传媒体（音频等）到设备，返回可嵌入 URL
+ *   aicast media  <dev> --list                            # 列出设备上的媒体项
+ *   aicast media  <dev> --remove <id>                     # 删除设备上的媒体
+ *   aicast forget <dev>
  * <dev> 可为 deviceId / 设备名 / ip:port。所有输出为 JSON（stdout），错误 {"ok":false,...}。
  */
 'use strict';
@@ -29,7 +29,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const STORE_DIR = process.env.AIFACE_HOME || path.join(os.homedir(), '.aiface');
+const STORE_DIR = process.env.AICAST_HOME || path.join(os.homedir(), '.aicast');
 const STORE_FILE = path.join(STORE_DIR, 'devices.json');
 
 // ---------- store ----------
@@ -50,7 +50,7 @@ function resolveDev(key) {
     return { id, ...d };
   }
   if (/^[\w.-]+(:\d+)?$/.test(key)) return { id: key, address: key.includes(':') ? key : key + ':43210' };
-  die(`未知设备 "${key}"，先执行 aiface discover 或 aiface auth <ip:port> --password …`);
+  die(`未知设备 "${key}"，先执行 aicast discover 或 aicast auth <ip:port> --password …`);
 }
 
 // ---------- http ----------
@@ -74,7 +74,7 @@ async function api(dev, method, p, body, opts = {}) {
   } finally { clearTimeout(timer); }
   let json; try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
   if (res.status === 401) {
-    die(`设备 ${dev.id} 需要鉴权：先运行 aiface auth ${dev.address} --password <用户设置的密码>`, json);
+    die(`设备 ${dev.id} 需要鉴权：先运行 aicast auth ${dev.address} --password <用户设置的密码>`, json);
   }
   // 429：防爆破锁定（计数已落盘，进程重启不会清零）
   if (res.status === 429) {
@@ -85,7 +85,7 @@ async function api(dev, method, p, body, opts = {}) {
   // 只是不接受投送 —— 这种情况必须原话转告用户，别自己瞎重试。
   if (res.status === 403 && json && json.code === 'cast_disabled') {
     // message 本身就是一句可直接转述给人看的话，别再自己复述一遍
-    die(`设备 ${dev.id} 当前不接受投送：${json.message || '请在设备上打开 aiface → 访问模式 → 投送。'}`, json);
+    die(`设备 ${dev.id} 当前不接受投送：${json.message || '请在设备上打开「爱投屏」→ 访问模式 → 投送。'}`, json);
   }
   if (!res.ok && json.ok !== false) die(`HTTP ${res.status}`, json);
   return json;
@@ -119,7 +119,7 @@ function discover(timeoutMs) {
     const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     const query = Buffer.concat([
       Buffer.from([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]),  // ID=0 flags=0 QDCOUNT=1 AN/NS/AR=0
-      encodeName(['_aiface', '_tcp', 'local']),
+      encodeName(['_aicast', '_tcp', 'local']),
       Buffer.from([0, 12, 0, 1]),                          // PTR IN
     ]);
     function onData(msg, rinfo) {
@@ -166,11 +166,11 @@ function parsePtrAndMore(msg, count, startOff, found, hostnames) {
     } else if (type === 1) as.push({ name: n.name, ip: msg.readUInt8(rdataOff) + '.' + msg.readUInt8(rdataOff + 1) + '.' + msg.readUInt8(rdataOff + 2) + '.' + msg.readUInt8(rdataOff + 3) });
   }
   for (const a of as) hostnames[a.name.toLowerCase()] = a.ip;
-  for (const p of ptrs) if (p.name === '_aiface._tcp.local') found[p.ptr] = found[p.ptr] || {};
+  for (const p of ptrs) if (p.name === '_aicast._tcp.local') found[p.ptr] = found[p.ptr] || {};
   for (const s of srvs) if (found[s.name]) { found[s.name].port = s.srv.port; found[s.name].target = s.srv.target.toLowerCase(); }
   for (const t of txts) if (found[t.name]) found[t.name].txt = t.txt;
   for (const [inst, d] of Object.entries(found)) {
-    const base = inst.replace(/\._aiface\._tcp\.local$/i, '');
+    const base = inst.replace(/\._aicast\._tcp\.local$/i, '');
     d.name = decodeUtf8Label(base);
     if (d.target) d.ip = hostnames[d.target];
   }
@@ -310,14 +310,14 @@ async function cmdThemes(key) {
 }
 async function cmdTheme(key, pos, args) {
   const dev = resolveDev(key);
-  // 删除：aiface theme <dev> --remove <id>
+  // 删除：aicast theme <dev> --remove <id>
   if (args.remove) {
     const id = typeof args.remove === 'string' ? args.remove : pos[0];
     if (!id) die('theme --remove 需要主题 id');
     console.log(JSON.stringify(await api(dev, 'DELETE', '/theme?id=' + encodeURIComponent(id)), null, 1));
     return;
   }
-  // 注册：aiface theme <dev> --register (--html-file f | --html "<h>") [--name N] [--id ID] [--activate]
+  // 注册：aicast theme <dev> --register (--html-file f | --html "<h>") [--name N] [--id ID] [--activate]
   if (args.register) {
     let html;
     if (args['html-file']) html = fs.readFileSync(args['html-file'], 'utf8');
@@ -330,7 +330,7 @@ async function cmdTheme(key, pos, args) {
     console.log(JSON.stringify(await api(dev, 'POST', '/theme', body, { timeoutMs: 30000 }), null, 1));
     return;
   }
-  // 激活：aiface theme <dev> <id>
+  // 激活：aicast theme <dev> <id>
   const id = pos[0] || (typeof args === 'object' && args.use);
   if (!id) die('theme 需要 <id>（激活）或 --register/--remove');
   console.log(JSON.stringify(await api(dev, 'POST', '/param', { key: 'theme', value: String(id) }), null, 1));
@@ -373,7 +373,7 @@ async function cmdMedia(key, pos, args) {
     text = await res.text();
   } finally { clearTimeout(timer); }
   let json; try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
-  if (res.status === 401) die(`设备 ${dev.id} 需要鉴权：先运行 aiface auth ${dev.address} --password <pwd>`, json);
+  if (res.status === 401) die(`设备 ${dev.id} 需要鉴权：先运行 aicast auth ${dev.address} --password <pwd>`, json);
   if (json.ok && json.url) {
     const host = dev.address.split(':')[0];
     json.absoluteUrl = `http://${host}:43210${json.url}`; // 直接可嵌进 <audio>/<img> src
@@ -426,7 +426,7 @@ async function main() {
       case 'media': need(devKey); return await cmdMedia(devKey, pos.slice(2), args);
       case 'forget': need(devKey); return cmdForget(devKey);
       default:
-        console.log('用法: aiface <discover|list|auth|info|render|message|events|state|param|themes|theme|media|forget> [参数]  (详见文件头注释)');
+        console.log('用法: aicast <discover|list|auth|info|render|message|events|state|param|themes|theme|media|forget> [参数]  (详见文件头注释)');
         process.exit(cmd ? 1 : 0);
     }
   } catch (e) {

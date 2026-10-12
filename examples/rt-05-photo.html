@@ -98,7 +98,7 @@
     if (failed === 0) el.textContent = '远端图片 ' + loaded + '/' + SHOTS.length + ' 全部加载成功';
     else el.textContent = '成功 ' + loaded + ' · 失败 ' + failed + '（降级占位已生效）';
     document.getElementById('net').style.background = failed ? '#F59F0B' : '#0FA36B';
-    if (typeof Aiface !== 'undefined' && Aiface.emit) Aiface.emit('demo.gallery', { loaded:loaded, failed:failed });
+    if (typeof AiCast !== 'undefined' && AiCast.emit) AiCast.emit('demo.gallery', { loaded:loaded, failed:failed });
   }
 </script>
 </body>

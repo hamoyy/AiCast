@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- 投屏测试 03：触摸交互 + 事件回传
-     测什么：Aiface.emit 回传（可用 $A events 捞到）、Aiface.onMessage 下行、
+     测什么：AiCast.emit 回传（可用 $A events 捞到）、AiCast.onMessage 下行、
             localStorage 持久化、CSS 过渡动画、点击热区尺寸（≥44dp）
      回传事件：demo.pack / demo.toggle / demo.allDone
      /message 支持：{"action":"add","text":"..."} 与 {"action":"clear"} -->
@@ -99,7 +99,7 @@
   if (!items.length) items = DEFAULTS.slice();
 
   function save(){ try{ localStorage.setItem(KEY, JSON.stringify(items)); }catch(e){} }
-  function emit(n, d){ if (typeof Aiface !== 'undefined' && Aiface.emit) Aiface.emit(n, d || {}); }
+  function emit(n, d){ if (typeof AiCast !== 'undefined' && AiCast.emit) AiCast.emit(n, d || {}); }
 
   var wrap = document.getElementById('wrap');
   function render(){
@@ -164,8 +164,8 @@
   document.getElementById('add').addEventListener('click', doAdd);
   document.getElementById('ipt').addEventListener('keydown', function(e){ if (e.key === 'Enter') doAdd(); });
 
-  if (typeof Aiface !== 'undefined' && Aiface.onMessage) {
-    Aiface.onMessage(function(m){
+  if (typeof AiCast !== 'undefined' && AiCast.onMessage) {
+    AiCast.onMessage(function(m){
       if (!m) return;
       if (m.action === 'add' && m.text) {
         var maxId = items.reduce(function(a,i){ return Math.max(a, i.id); }, 0);

@@ -22,7 +22,7 @@
 </head>
 <body>
   <div class="card">
-    <h1>aiface 投送成功 ✅</h1>
+    <h1>aicast 投送成功 ✅</h1>
     <p>这是 M1 验收演示页。点按钮会通过 JS SDK 回传事件，agent 拉 /events 可见。</p>
     <div class="row">
       <button class="ok" onclick="tap('approve')">同意</button>
@@ -32,11 +32,11 @@
   </div>
 <script>
   function tap(kind){
-    Aiface.emit(kind, { demo:true, at:Date.now() });
+    AiCast.emit(kind, { demo:true, at:Date.now() });
     log('已回传事件: ' + kind);
   }
-  Aiface.onMessage(d => log('收到增量消息: ' + JSON.stringify(d)));
-  async function info(){ const i = await Aiface.getInfo();
+  AiCast.onMessage(d => log('收到增量消息: ' + JSON.stringify(d)));
+  async function info(){ const i = await AiCast.getInfo();
     if(i) log('设备: ' + i.name + ' / ' + i.device.class + ' / touch=' + i.device.input.touch); }
   function log(t){ document.getElementById('log').textContent = t; }
   info();

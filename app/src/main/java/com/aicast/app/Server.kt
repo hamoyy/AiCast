@@ -1,4 +1,4 @@
-package com.aiface.app
+package com.aicast.app
 
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -88,7 +88,7 @@ object Server {
                 return true
             } catch (t: Throwable) {
                 lastError = "${t.javaClass.simpleName}: ${t.message}"
-                android.util.Log.w("aiface", "server start failed on $p", t)
+                android.util.Log.w("aicast", "server start failed on $p", t)
             }
         }
         return false
@@ -161,8 +161,8 @@ private suspend fun guard(call: ApplicationCall): Boolean {
 }
 
 private fun allowedOrigin(origin: String, host: String): Boolean =
-    origin.equals("https://aiface.local", ignoreCase = true) ||
-        origin.equals("http://aiface.local", ignoreCase = true) ||
+    origin.equals("https://aicast.local", ignoreCase = true) ||
+        origin.equals("http://aicast.local", ignoreCase = true) ||
         origin.equals("http://$host", ignoreCase = true)
 
 private fun corsHeaders(call: ApplicationCall, origin: String?) {
@@ -540,7 +540,7 @@ private fun mount(rt: Routing) = with(rt) {
 
 /** 投送总开关关着时给 agent 的统一说法（/info.acceptingHint 用的是同一句） */
 private const val CAST_DISABLED_MSG =
-    "该设备已关闭投送开关。请让用户在设备上打开 aiface → 访问模式 → 投送，然后再试。"
+    "该设备已关闭投送开关。请让用户在设备上打开「爱投屏」→ 访问模式 → 投送，然后再试。"
 
 /** 逐项权限判定：无权限时直接写回 403 并返回 false，调用方 return 即可 */
 private suspend fun hasPerm(call: ApplicationCall, permission: String, hint: String): Boolean {

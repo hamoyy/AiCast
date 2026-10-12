@@ -69,12 +69,12 @@
     var tick = ss[idx].querySelector('.tick');
     tick.style.animation = 'none'; void tick.offsetWidth;
     tick.style.animation = 'run ' + DUR + 'ms linear'; tick.style.animationPlayState = paused ? 'paused' : 'running';
-    Aiface.emit('slide.played', { index: idx, title: SLIDES[idx].k, by: by });
+    AiCast.emit('slide.played', { index: idx, title: SLIDES[idx].k, by: by });
   }
   function restart(){ if (timer) clearInterval(timer); timer = setInterval(function(){ if (!paused) show(idx+1, 'auto'); }, DUR); }
   function setPaused(p){
     paused = p; document.body.classList.toggle('paused', p);
-    Aiface.emit('remote.pause', { paused: p });
+    AiCast.emit('remote.pause', { paused: p });
   }
   document.addEventListener('keydown', function(e){
     var k = e.keyCode;

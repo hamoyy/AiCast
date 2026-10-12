@@ -1,4 +1,17 @@
-# aiface 项目长期笔记
+# AiCast（爱投屏）项目长期笔记
+
+## 命名（2026-10-12 起，全仓库统一）
+
+- 英文名 **AiCast**，中文名 **爱投屏**；包名/CLI 一律小写 `com.aicast.app` / `aicast`。
+- 中文名只出现在**用户可见文案**：启动器名、通知标题/渠道名、`acceptingHint` 引导语。
+  代码标识符、路径、命令一律 `AiCast` / `aicast`。
+- 完整改名映射与验证记录见 `.workbuddy/memory/2026-10-12.md`。
+- 关键标识符：`AiCastService`、`aiCastColors()`、`Theme.AiCast`、`assets/aicast-sdk.js`、
+  `window.AiCast` / `AndroidAiCast` / `aicast-message`、`https://aicast.local`、
+  mDNS `_aicast._tcp`、SharedPreferences `aicast*`、CLI `skill/bin/aicast` + `~/.aicast`。
+- **工作区文件夹仍是 `aiface`**：会话中改不动（Bash 工具 cwd 一直占着句柄，WinError 32）。
+  关掉会话后手动 `mv .../code/aiface .../code/aicast`。`scripts/dual-orchestrate.py`
+  的路径已改为由 `__file__` 推导，改名与否都不影响。
 
 ## 构建工具链（本机）
 
@@ -25,8 +38,9 @@ shell 日志，截图要用 `scripts/cap.py`（从 `\x89PNG` 起切）。
 
 - `/info.capabilities` 只能上报**真的有对应 HTTP 端点**的能力（P1-16）。
   `scripts/smoke.sh` 已有「能力清单真实性」组自动守这条。
-- `docs/DESIGN.md` §5/§10 目前仍写着 `POST /eval`、`GET /screenshot` 两个**不存在**的端点，
-  文献与实现不一致，改到相关区域时顺手订正。
-- 本机验证方式：模型看不了图片，改由页面用 `Aiface.emit` 回传
+- 文献同样受上一条约束。2026-10-12 已清掉 `docs/DESIGN.md` 里所有虚构端点
+  （`POST /eval`、`POST /screen`、`POST /system`、`GET /screenshot`）与虚构权限开关，
+  §5/§6/§11 现在对齐真实实现。**再写文档时不要凭草稿补功能。**
+- 本机验证方式：模型看不了图片，改由页面用 `AiCast.emit` 回传
   `getBoundingClientRect()` / `scrollHeight-clientHeight` / `CSS.supports` 结果，
   比截图更能揪问题（曾靠这个抓到右栏溢出 252px）。

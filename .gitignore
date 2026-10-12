@@ -15,3 +15,6 @@ captures/
 # 投屏测试实拍（不入库）
 .render-test/
 __pycache__/
+
+# 本机会话记忆与备份（不入库）
+.workbuddy/

@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  只用于两处兜底：① API 24-25（Android 7.x）不认识 adaptive-icon；
+  ② Android TV 主屏的 banner（320x180 横幅）。
+  API 26+ 的手机 / 平板 / TV 桌面用的是 mipmap-anydpi-v26/ic_launcher.xml。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">

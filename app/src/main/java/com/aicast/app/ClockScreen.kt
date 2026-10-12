@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,12 +57,13 @@ import java.util.Locale
 private val labelColor = Color(0xFF8A939E)
 private val valueColor = Color(0xFFE6EAF0)
 internal val accent = Color(0xFF4CC2A5)
-private val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-private val secFmt = SimpleDateFormat("ss", Locale.getDefault())
-private val dateFmt = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.CHINA)
 // JetBrains Mono ExtraBold（OFL，docs/licenses/）：数字等宽不抖动，
 // 时间和日期共用同一字体族，左侧视觉基线一致；日期里的中文自动回退系统字体
 private val clockFont = FontFamily(Font(R.font.jetbrains_mono_extrabold))
+
+/** 跟随系统「使用 24 小时制」开关：英语地区默认是 12 小时制，写死 HH:mm 会显示成 15:40 */
+private fun is24Hour(ctx: android.content.Context) =
+    android.text.format.DateFormat.is24HourFormat(ctx)
 
 @Composable
 fun aiCastColors() = androidx.compose.material3.darkColorScheme(
@@ -111,7 +114,7 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (isPublic) "公开投送" else "需密码",
+                    stringResource(if (isPublic) R.string.mode_public else R.string.mode_auth),
                     color = labelColor,
                     fontSize = (cfg.screenWidthDp / 55f).sp
                 )
@@ -124,11 +127,11 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
                         .clickable(onClick = onHistory)
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.Center
-                ) { Text("历史", color = labelColor, fontSize = 13.sp) }
+                ) { Text(stringResource(R.string.action_history), color = labelColor, fontSize = 13.sp) }
                 IconButton(onClick = onSettings, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Default.Settings,
-                        contentDescription = "设置",
+                        contentDescription = stringResource(R.string.action_settings),
                         tint = labelColor,
                         modifier = Modifier.size(22.dp)
                     )
@@ -163,13 +166,33 @@ private fun ClockBlock(timeSize: androidx.compose.ui.unit.TextUnit) {
         }
     }
     val cfg = LocalConfiguration.current
+    val ctx = LocalContext.current
+    // 语言/12-24 小时制一变就重建格式器（key 变了 remember 重算）
+    val locale = remember(cfg) { cfg.locales.get(0) ?: Locale.getDefault() }
+    val h24 = remember(ctx, cfg) { is24Hour(ctx) }
+    val timeFmt = remember(locale, h24) {
+        SimpleDateFormat(if (h24) "HH:mm" else "h:mm", locale)
+    }
+    val amPmFmt = remember(locale, h24) {
+        if (h24) null else SimpleDateFormat("a", locale)
+    }
+    val secFmt = remember(locale) { SimpleDateFormat("ss", locale) }
+    // 日期交给系统按语言挑最合适的顺序（中文「2026年10月12日 星期一」／英文「Monday, October 12, 2026」），
+    // 不再写死某一种语言的结构
+    val dateFmt = remember(locale) {
+        SimpleDateFormat(
+            android.text.format.DateFormat.getBestDateTimePattern(locale, "yyyyMMMdEEEE"),
+            locale
+        )
+    }
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.Start
     ) {
         // 等宽数字：秒/分变化时字宽恒定，日期不再左右抖动
         Text(
-            timeFmt.format(Date(now)) + ":" + secFmt.format(Date(now)),
+            timeFmt.format(Date(now)) + ":" + secFmt.format(Date(now)) +
+                (amPmFmt?.let { " " + it.format(Date(now)) } ?: ""),
             color = valueColor,
             fontSize = timeSize,
             fontFamily = clockFont,
@@ -275,9 +298,9 @@ private fun randomWaves(): List<WaveConf> {
 private fun paramsFontMultiplier(): Float =
     Params.get("fontScale").toFloatOrNull()?.coerceIn(0.8f, 2.0f) ?: 1f
 
-internal fun permLabel(p: String) = when (p) {
-    "render" -> "投送"
-    "message" -> "增量"
-    "param" -> "参数"
+internal fun permLabel(p: String): String = when (p) {
+    "render" -> Str.get(R.string.perm_render)
+    "message" -> Str.get(R.string.perm_message)
+    "param" -> Str.get(R.string.perm_param)
     else -> p
 }

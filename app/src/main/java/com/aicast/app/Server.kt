@@ -117,7 +117,7 @@ private suspend fun guard(call: ApplicationCall): Boolean {
     if (origin != null && !allowedOrigin(origin, call.request.host())) {
         call.respond(
             HttpStatusCode.Forbidden,
-            err("cross_origin_denied", "禁止跨站调用（请在本机/ agent 侧发起）")
+            err("cross_origin_denied", Str.get(R.string.err_cross_origin))
         )
         return false
     }
@@ -135,7 +135,7 @@ private suspend fun guard(call: ApplicationCall): Boolean {
         if (!ct.startsWith("application/json", ignoreCase = true)) {
             call.respond(
                 HttpStatusCode.UnsupportedMediaType,
-                err("content_type_required", "写操作需 Content-Type: application/json")
+                err("content_type_required", Str.get(R.string.err_content_type))
             )
             return false
         }
@@ -151,7 +151,7 @@ private suspend fun guard(call: ApplicationCall): Boolean {
         if (tok == null || !Auth.valid(tok)) {
             call.respond(
                 HttpStatusCode.Unauthorized,
-                err("unauthorized", "需先 POST /auth {password} 换取 token")
+                err("unauthorized", Str.get(R.string.err_unauthorized))
             )
             return false
         }
@@ -186,21 +186,23 @@ private fun mount(rt: Routing) = with(rt) {
                 buildJsonObject {
                     put("ok", JsonPrimitive(true))
                     put("type", JsonPrimitive("public"))
-                    put("message", JsonPrimitive("该设备为公开模式，无需 token"))
+                    put("message", JsonPrimitive(Str.get(R.string.auth_public_msg)))
                 }
             )
         if (Auth.locked())
             return@post call.respond(
                 HttpStatusCode.TooManyRequests,
-                errLocked("密码错误次数过多，请稍后再试", Auth.lockRemainingMs())
+                errLocked(Str.get(R.string.auth_locked_msg), Auth.lockRemainingMs())
             )
         val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
-            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", "上限 4MB"))
+            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", Str.get(R.string.err_payload_too_large)))
         val pwd = parseObj(body)?.str("password")
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_request", "需要 {password}"))
+            ?: return@post call.respond(
+                HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.err_need_password))
+            )
         if (pwd.isNotEmpty() && Prefs.checkPassword(pwd)) {
             Auth.noteSuccess()
             val (t, exp) = Auth.issue()
@@ -217,8 +219,8 @@ private fun mount(rt: Routing) = with(rt) {
             CommandBus.emit("auth.denied", "{}")
             call.respond(
                 if (nowLocked) HttpStatusCode.TooManyRequests else HttpStatusCode.Unauthorized,
-                if (nowLocked) errLocked("密码错误", Auth.lockRemainingMs())
-                else err("wrong_password", "密码错误")
+                if (nowLocked) errLocked(Str.get(R.string.auth_wrong_password), Auth.lockRemainingMs())
+                else err("wrong_password", Str.get(R.string.auth_wrong_password))
             )
         }
     }
@@ -228,15 +230,15 @@ private fun mount(rt: Routing) = with(rt) {
         if (!Prefs.isOpen("render"))
             return@post call.respond(
                 HttpStatusCode.Forbidden,
-                err("cast_disabled", CAST_DISABLED_MSG)
+                err("cast_disabled", castDisabledMsg())
             )
         val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
-            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", "上限 4MB"))
+            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", Str.get(R.string.err_payload_too_large)))
         val obj = parseObj(body)
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", "body 需为 JSON 对象"))
+            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", Str.get(R.string.err_bad_json_object)))
         val html = obj.str("html")
         val url = obj.str("url")
         val via = call.request.local.remoteHost
@@ -252,7 +254,7 @@ private fun mount(rt: Routing) = with(rt) {
                         put("ok", JsonPrimitive(true))
                         put("type", JsonPrimitive("render"))
                         put("queued", JsonPrimitive(true))
-                        put("message", JsonPrimitive("设备界面不在前台，内容已排队，打开 app 后立即呈现"))
+                        put("message", JsonPrimitive(Str.get(R.string.render_queued_msg)))
                         put("ts", JsonPrimitive(System.currentTimeMillis()))
                     }
                 )
@@ -263,12 +265,12 @@ private fun mount(rt: Routing) = with(rt) {
                 if (scheme == null || !scheme.equals("http", true) && !scheme.equals("https", true))
                     return@post call.respond(
                         HttpStatusCode.BadRequest,
-                        err("bad_url", "url 仅支持 http/https")
+                        err("bad_url", Str.get(R.string.err_bad_url))
                     )
                 if (!CommandBus.loadUrl(url, obj.bool("wake")))
                     return@post call.respond(
                         HttpStatusCode.Conflict,
-                        err("no_display", "设备界面未在前台，无法加载 URL")
+                        err("no_display", Str.get(R.string.err_no_display_url))
                     )
                 call.respond(ok("render"))
             }
@@ -283,16 +285,18 @@ private fun mount(rt: Routing) = with(rt) {
 
     // 注册一个 agent 自定义 HTML 首页主题；activate=true 立即设为首页
     post("/theme") {
-        if (!hasPerm(call, "render", "注册主题复用投送权限")) return@post
+        if (!hasPerm(call, "render", Str.get(R.string.perm_hint_register_theme))) return@post
         val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
-            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", "上限 4MB"))
+            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", Str.get(R.string.err_payload_too_large)))
         val obj = parseObj(body)
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", "body 需为 JSON 对象"))
+            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", Str.get(R.string.err_bad_json_object)))
         val html = obj.str("html")
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_request", "需要 {html}"))
+            ?: return@post call.respond(
+                HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.err_need_html))
+            )
         val meta = try {
             Themes.register(html, obj.str("name"), obj.str("id"))
         } catch (e: IllegalArgumentException) {
@@ -318,9 +322,9 @@ private fun mount(rt: Routing) = with(rt) {
 
     // P0-6：删除此前是零权限校验，公开模式下任何人都能清空别人的主题
     delete("/theme") {
-        if (!hasPerm(call, "render", "删除主题复用投送权限")) return@delete
+        if (!hasPerm(call, "render", Str.get(R.string.perm_hint_delete_theme))) return@delete
         val id = call.request.queryParameters["id"]
-            ?: return@delete call.respond(HttpStatusCode.BadRequest, err("bad_request", "需要 ?id="))
+            ?: return@delete call.respond(HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.err_need_id)))
         val removed = Themes.remove(id)
         call.respond(buildJsonObject {
             put("ok", JsonPrimitive(removed))
@@ -333,20 +337,25 @@ private fun mount(rt: Routing) = with(rt) {
 
     // 上传：raw body 流式落盘（需 Content-Length），?name= 提供原名；复用 render 权限
     post("/media") {
-        if (!hasPerm(call, "render", "媒体上传复用投送权限")) return@post
+        if (!hasPerm(call, "render", Str.get(R.string.perm_hint_upload_media))) return@post
         val len = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-            ?: return@post call.respond(HttpStatusCode.LengthRequired, err("length_required", "上传需带 Content-Length"))
-        if (len <= 0) return@post call.respond(HttpStatusCode.BadRequest, err("bad_request", "空上传"))
+            ?: return@post call.respond(
+                HttpStatusCode.LengthRequired,
+                err("length_required", Str.get(R.string.media_need_length))
+            )
+        if (len <= 0) return@post call.respond(
+            HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.media_empty_upload))
+        )
         val maxSingle = Media.effectiveMaxSingle()
         if (len > maxSingle)
             return@post call.respond(
                 HttpStatusCode.PayloadTooLarge,
-                err("payload_too_large", "媒体上限 ${maxSingle / 1024 / 1024}MB")
+                err("payload_too_large", Str.get(R.string.media_limit_mb, maxSingle / 1024 / 1024))
             )
         if (!Media.hasRoom(len))
             return@post call.respond(
                 HttpStatusCode.InsufficientStorage,
-                err("no_space", "设备存储不足（已给系统盘留底）；先用 DELETE /media?id= 清理")
+                err("no_space", Str.get(R.string.media_no_space))
             )
         val name = call.request.queryParameters["name"] ?: "media.mp3"
         val ct = call.request.contentType()
@@ -360,11 +369,16 @@ private fun mount(rt: Routing) = with(rt) {
             }
             if (copied > maxSingle) {
                 tmp.delete()
-                return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", "媒体超过单文件上限"))
+                return@post call.respond(
+                    HttpStatusCode.PayloadTooLarge,
+                    err("payload_too_large", Str.get(R.string.media_over_limit))
+                )
             }
             if (copied != len) {
                 tmp.delete()
-                return@post call.respond(HttpStatusCode.BadRequest, err("incomplete", "body 与 Content-Length 不一致"))
+                return@post call.respond(
+                    HttpStatusCode.BadRequest, err("incomplete", Str.get(R.string.media_length_mismatch))
+                )
             }
             val meta = Media.commit(name, type, tmp)
             CommandBus.emit(
@@ -385,13 +399,22 @@ private fun mount(rt: Routing) = with(rt) {
             })
         } catch (e: IllegalArgumentException) {
             tmp.delete()
-            call.respond(HttpStatusCode.BadRequest, err("bad_media", e.message ?: "媒体参数有误"))
+            call.respond(
+                HttpStatusCode.BadRequest,
+                err("bad_media", e.message ?: Str.get(R.string.media_bad_param))
+            )
         } catch (e: IllegalStateException) {
             tmp.delete()
-            call.respond(HttpStatusCode.InsufficientStorage, err("no_space", e.message ?: "设备存储不足"))
+            call.respond(
+                HttpStatusCode.InsufficientStorage,
+                err("no_space", e.message ?: Str.get(R.string.media_no_storage))
+            )
         } catch (e: Exception) {
             tmp.delete()
-            call.respond(HttpStatusCode.InternalServerError, err("media_failed", e.message ?: "媒体写入失败"))
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                err("media_failed", e.message ?: Str.get(R.string.media_write_failed))
+            )
         }
     }
 
@@ -401,9 +424,9 @@ private fun mount(rt: Routing) = with(rt) {
 
     // P0-6：同上，删除此前零校验
     delete("/media") {
-        if (!hasPerm(call, "render", "删除媒体复用投送权限")) return@delete
+        if (!hasPerm(call, "render", Str.get(R.string.perm_hint_delete_media))) return@delete
         val id = call.request.queryParameters["id"]
-            ?: return@delete call.respond(HttpStatusCode.BadRequest, err("bad_request", "需要 ?id="))
+            ?: return@delete call.respond(HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.err_need_id)))
         val removed = Media.remove(id)
         call.respond(buildJsonObject {
             put("ok", JsonPrimitive(removed))
@@ -418,9 +441,13 @@ private fun mount(rt: Routing) = with(rt) {
             call.request.path().substringAfterLast('/'), "UTF-8"
         )
         val meta = Media.get(id)
-            ?: return@get call.respond(HttpStatusCode.NotFound, err("not_found", "无此媒体: $id"))
+            ?: return@get call.respond(
+                HttpStatusCode.NotFound, err("not_found", Str.get(R.string.media_not_found, id))
+            )
         val f = Media.fileOf(meta)
-            ?: return@get call.respond(HttpStatusCode.NotFound, err("gone", "媒体文件已被清理"))
+            ?: return@get call.respond(
+                HttpStatusCode.NotFound, err("gone", Str.get(R.string.media_gone))
+            )
         val ctype = try {
             ContentType.parse(meta.type)
         } catch (e: Exception) {
@@ -440,7 +467,10 @@ private fun mount(rt: Routing) = with(rt) {
         val e2 = (end ?: (total - 1)).coerceAtMost(total - 1)
         if (s > e2 || s >= total) {
             call.response.header(HttpHeaders.ContentRange, "bytes */$total")
-            return@get call.respond(HttpStatusCode.RequestedRangeNotSatisfiable, err("bad_range", "区间超出"))
+            return@get call.respond(
+                HttpStatusCode.RequestedRangeNotSatisfiable,
+                err("bad_range", Str.get(R.string.media_bad_range))
+            )
         }
         call.response.header(HttpHeaders.ContentRange, "bytes $s-$e2/$total")
         call.response.header(HttpHeaders.ContentLength, (e2 - s + 1).toString())
@@ -462,19 +492,19 @@ private fun mount(rt: Routing) = with(rt) {
     post("/message") {
         if (!Prefs.isOpen("message"))
             return@post call.respond(
-                HttpStatusCode.Forbidden, err("permission_denied", "该设备未开放 message")
+                HttpStatusCode.Forbidden, err("permission_denied", Str.get(R.string.err_perm_denied_message))
             )
         val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
-            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", "上限 4MB"))
+            ?: return@post call.respond(HttpStatusCode.PayloadTooLarge, err("payload_too_large", Str.get(R.string.err_payload_too_large)))
         parseObjOrJson(body)
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", "body 需为合法 JSON"))
+            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", Str.get(R.string.err_bad_json)))
         if (!CommandBus.deliverMessage(body))
             return@post call.respond(
                 HttpStatusCode.Conflict,
-                err("no_display", "当前没有页面在前台接收，增量消息已丢弃")
+                err("no_display", Str.get(R.string.err_msg_no_page))
             )
         call.respond(ok("message"))
     }
@@ -484,25 +514,33 @@ private fun mount(rt: Routing) = with(rt) {
     post("/param") {
         if (!Prefs.isOpen("param"))
             return@post call.respond(
-                HttpStatusCode.Forbidden, err("permission_denied", "该设备未开放 param")
+                HttpStatusCode.Forbidden, err("permission_denied", Str.get(R.string.err_perm_denied_param))
             )
         val obj = try { parseObj(call.receiveLimited() ?: "") }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", "body 需为 JSON 对象"))
+            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", Str.get(R.string.err_bad_json_object)))
         val k = obj.str("key")
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_request", "需要 key"))
+            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.err_need_key)))
         val v = obj.str("value")
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_request", "需要 value(字符串)"))
+            ?: return@post call.respond(
+                HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.err_need_value))
+            )
         if (Params.set(k, v)) call.respond(ok("param"))
         else if (k == "theme") call.respond(
             HttpStatusCode.BadRequest,
-            err("unknown_theme", "无此主题: $v（可用: " + Themes.list().joinToString("/") { it.id } + "）")
+            err(
+                "unknown_theme",
+                Str.get(R.string.err_unknown_theme, v, Themes.list().joinToString("/") { it.id })
+            )
         )
         else call.respond(
             HttpStatusCode.BadRequest,
-            err("unknown_param", "不支持: $k（可用 " + Params.supportedKeys().joinToString("/") + "）")
+            err(
+                "unknown_param",
+                Str.get(R.string.err_unknown_param, k, Params.supportedKeys().joinToString("/"))
+            )
         )
     }
 
@@ -538,16 +576,23 @@ private fun mount(rt: Routing) = with(rt) {
 
 // ---------------- helpers ----------------
 
-/** 投送总开关关着时给 agent 的统一说法（/info.acceptingHint 用的是同一句） */
-private const val CAST_DISABLED_MSG =
-    "该设备已关闭投送开关。请让用户在设备上打开「爱投屏」→ 访问模式 → 投送，然后再试。"
+/**
+ * 投送总开关关着时给 agent 的统一说法（/info.acceptingHint 用的是同一句）。
+ * 随设备语言走：这句话的设计目的就是「agent 可以原样转述给用户」。
+ */
+internal fun castDisabledMsg(): String = Str.get(
+    R.string.hint_cast_disabled,
+    Str.get(R.string.app_name),
+    Str.get(R.string.settings_access_mode),
+    Str.get(R.string.settings_cast_title)
+)
 
 /** 逐项权限判定：无权限时直接写回 403 并返回 false，调用方 return 即可 */
 private suspend fun hasPerm(call: ApplicationCall, permission: String, hint: String): Boolean {
     if (Prefs.isOpen(permission)) return true
     // render 现在就是投送总开关，措辞要能直接转述给人看
-    val msg = if (permission == "render") CAST_DISABLED_MSG
-    else "该设备未开放 $permission（$hint）"
+    val msg = if (permission == "render") castDisabledMsg()
+    else Str.get(R.string.err_perm_denied_generic, permission, hint)
     call.respond(HttpStatusCode.Forbidden, err("permission_denied", msg))
     return false
 }
@@ -558,7 +603,7 @@ private suspend fun ApplicationCall.receiveLimited(): String? {
     return try {
         receiveText()
     } catch (e: io.ktor.utils.io.charsets.MalformedInputException) {
-        throw BadBody("body 必须是 UTF-8 编码的 JSON")
+        throw BadBody(Str.get(R.string.err_bad_encoding))
     }
 }
 
@@ -593,6 +638,6 @@ private fun ok(type: String) = buildJsonObject {
 private fun errLocked(msg: String, remainingMs: Long) = buildJsonObject {
     put("ok", JsonPrimitive(false))
     put("code", JsonPrimitive("locked"))
-    put("message", JsonPrimitive("$msg（还需等待 ${(remainingMs + 999) / 1000} 秒）"))
+    put("message", JsonPrimitive(Str.get(R.string.err_locked, msg, (remainingMs + 999) / 1000)))
     put("retryAfterMs", JsonPrimitive(remainingMs))
 }

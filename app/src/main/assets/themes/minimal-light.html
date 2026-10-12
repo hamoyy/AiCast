@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>素白</title>
+<title>Minimal Light</title>
 <style>
   html, body {
     margin: 0; height: 100%; overflow: hidden;
@@ -35,16 +35,29 @@
   </div>
 <script>
 (function () {
-  var WD = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  // 语言由宿主注入（window.__AICAST_LANG__），与 app 命中的那套文案资源一致
+  var LANG = (window.__AICAST_LANG__ === 'en') ? 'en' : 'zh';
+  var WD = LANG === 'en'
+    ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    : ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+  var MON = ['January', 'February', 'March', 'April', 'May', 'June',
+             'July', 'August', 'September', 'October', 'November', 'December'];
   function p(n) { return n < 10 ? '0' + n : '' + n; }
   function tick() {
     var d = new Date();
     document.getElementById('hm').textContent = p(d.getHours()) + ':' + p(d.getMinutes());
     document.getElementById('ss').textContent = ':' + p(d.getSeconds());
-    document.getElementById('date').textContent =
-      d.getFullYear() + ' 年 ' + p(d.getMonth() + 1) + ' 月 ' + p(d.getDate()) + ' 日';
+    if (LANG === 'en') {
+      document.getElementById('date').textContent =
+        MON[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+    } else {
+      document.getElementById('date').textContent =
+        d.getFullYear() + ' 年 ' + p(d.getMonth() + 1) + ' 月 ' + p(d.getDate()) + ' 日';
+    }
     document.getElementById('wk').textContent = WD[d.getDay()];
   }
+  document.documentElement.lang = LANG;
+  document.title = (LANG === 'en') ? 'Minimal Light' : '素白';
   tick(); setInterval(tick, 1000);
 })();
 </script>

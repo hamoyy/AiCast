@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 前景层：只放图形，背景透明。
+     图形外接圆半径 31.2dp（角点 78,74 距中心），落在 66dp 安全区内，
+     圆形遮罩下四角不会被切。坐标沿用原 drawable/ic_launcher.xml，未改形。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/ic_launcher_foreground"
+        android:pathData="M30,42 h48 a4,4 0 0 1 4,4 v24 a4,4 0 0 1 -4,4 h-48 a4,4 0 0 1 -4,-4 v-24 a4,4 0 0 1 4,-4 z" />
+    <path
+        android:fillColor="@color/ic_launcher_background"
+        android:pathData="M40,52 h28 v4 h-28 z M40,60 h18 v4 h-18 z" />
+</vector>

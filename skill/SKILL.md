@@ -1,6 +1,8 @@
 ---
 name: aicast
-description: 局域网内 AI 向安卓设备投送 HTML 内容并读取设备画像/交互回传。当用户要"给某台设备屏幕投内容/把手机或电视当显示面板/投送待办、简报、仪表盘、音频页面"时使用。
+version: 1.0.0
+agent_created: true
+description: 局域网内向装了 AiCast app 的安卓设备投送 HTML 页面，并按设备画像（触摸/遥控/电视）决定内容形态、读交互回传。当用户要"给手机或电视投一页内容/把闲置安卓屏当 AI 的显示面板/投待办、简报、仪表盘、音频页"时使用。不是系统投屏：视频镜像、屏幕镜像、Miracast、AirPlay、DLNA 都不归它管。
 ---
 
 # AiCast（爱投屏）— AI 的局域网显示通道
@@ -14,20 +16,40 @@ agent 用 Bash 调用：发现 → 鉴权 → 投送 HTML → （需要时）读
 本文档只写**实机验证过的硬约束**与**已知的坑**。示例、模板都是参考做法不是规范——
 放开想象力自由发挥，踩到新坑再把经验补回来。
 
+## 开工前：环境自检
+
+先确认运行时，再走工作流。详细安装、故障处理与降级见 `references/setup-guide.md`：
+
+```bash
+node --version                                            # 需 ≥ 18（CLI 零依赖，只要 Node）
+python <本skill目录>/scripts/check_environment.py          # 机器可读的就绪状态（Windows 可能是 python3）
+```
+
+| 状态 | 含义 | 下一步 |
+|---|---|---|
+| `ready` | Node 在且够版本 | 直接进工作流，不再讲配置 |
+| `needs_setup` | Node 缺失 | 按 `references/setup-guide.md` 装好 Node 18+ 再重检 |
+| `unavailable` | CLI 不在预期位置 | 确认本 Skill 装在 `~/.workbuddy/skills/aicast/`，或照检查器输出里的路径修 |
+
+设备侧状态（app 是否在前台、要不要密码、`accepting` 开关、配额）**不进环境检查**——它随用随变，
+交给工作流里各自的失败分支处理，不提前拦人。
+
 ## 标准工作流
 
 ```bash
 A="node <本skill目录>/bin/aicast"
 
 $A discover                      # 1. mDNS 发现（带画像摘要+权限清单）
-$A auth <dev> --password <pwd>   # 2. auth 模式设备：向用户要密码，换长期 token
+$A auth <dev> --password-stdin   # 2. auth 模式设备：向用户要密码（走管道），换长期 token
 $A info <dev>                    # 3. 取完整画像 —— 生成内容前必做
 $A render <dev> --html-file page.html --wake   # 4. 投送（先写到临时 UTF-8 文件）
 ```
 
 - `<dev>` 可以是 deviceId、设备名或 `ip:port`，CLI 自动解析并把 token 长期存 `~/.aicast/devices.json`。
 - 公开模式（`mode:public`）跳过 auth。`open` 数组决定该设备可用哪些能力。
-- 发现失败时：问用户待机时钟底部显示的 IP → `$A discover --address 192.168.x.x` 手动登记；
+- 发现失败时：先看 `discover` 输出里的 `mdnsDiag`——5353 被占用、组播被网络禁掉都会写明原因，少走弯路。
+  然后问用户待机时钟底部显示的 IP → `$A discover --address 192.168.x.x` 手动登记
+  （设备端口若不是默认 43210，要写成 `192.168.x.x:43211`）；
   仍不通多半是设备重启后 app 没在跑（部分 ROM 拦开机自启属正常），请用户手动打开一次 app。
 
 ### 设备可能"不接受投送"——发现得到 ≠ 能投
@@ -66,7 +88,8 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 4. 中文内容一律**写入 UTF-8 文件后用 `--html-file` 投送**（Windows Git Bash 的 shell 参数会把中文变 GBK 乱码）。
 5. 单页面 ≤ 4MB（`/render` 上限，指 HTML 本体）；空 body 的 render = 回待机。
 6. **CSS 兼容基线 = Chromium 66**（小米电视 MiTV-MFTP0 实测停在 66.0.3359.158，无法通过应用商店升级；
-   手机一般 ≥110）。下面是 **CSS.supports 实测表**，不是推测（`examples/tv-03-cssprobe.html` 可复测）：
+   手机一般 ≥110）。下面是 **CSS.supports 实测表**，不是推测（存疑时自己写一段 `CSS.supports` 探针页投上去复测，
+   别照抄任何现成页面）：
 
    | 特性 | Chromium 66 | 说明 |
    |---|---|---|
@@ -114,7 +137,7 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 |---|---|
 | `discover [--timeout ms] [--address ip[:port]]` | mDNS 浏览；address 为手动回退 |
 | `list` | 已保存设备（含 authed 状态） |
-| `auth <dev> --password <pwd>` | 换 token 并持久化（30 天，多 token 并存） |
+| `auth <dev> --password-stdin` | 换 token 并持久化（30 天，多 token 并存）；口令走管道，或设 `AICAST_PASSWORD` |
 | `info <dev>` | 完整画像 JSON（含 internet 实测状态） |
 | `render <dev> --html-file f \| --html '<h>' \| --url u \| --clear [--wake]` | 投送/加载 URL/回待机；wake=亮屏投 |
 | `message <dev> --data '<json>' \| --data-file f` | 给页面发增量数据（透传给 `AiCast.onMessage`） |
@@ -158,7 +181,10 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 验证过的起点，不是唯一写法，详见 `templates/README.md`：
 `todo-interactive`（手机待办）、`auto-briefing`（轮播简报）、`rich-article`（图文范式）、
 `remote-briefing`（TV 遥控轮播）、`lunch-roulette-{touch,tv}`（决策小游戏，⚠ 页内变量勿命名 `name`）、
-`audio-player-tv`（音频播放页）。多端并发案例见 `examples/`。
+`audio-player-tv`（音频播放页）。
+
+模板只是起点不是规范：读懂填充点后按当次意图重写，别照搬版式。
+同一意图投多台设备时，逐台取画像、各按§7.1决策表生成对应形态，两次 `render` 可并发下发互不干扰。
 
 ## 音频投送
 

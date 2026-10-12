@@ -76,9 +76,7 @@ object DeviceInfo {
                 // 附一句可直接转述给人看的话，省得 agent 自己措辞。
                 "accepting" to JsonPrimitive(accepting),
                 *if (accepting) emptyArray() else arrayOf(
-                    "acceptingHint" to JsonPrimitive(
-                        "该设备已关闭投送开关。请让用户在设备上打开「爱投屏」→ 访问模式 → 投送，然后再试。"
-                    )
+                    "acceptingHint" to JsonPrimitive(castDisabledMsg())
                 ),
                 "open" to JsonArray(Prefs.openList().map { JsonPrimitive(it) }),
                 "device" to JsonObject(

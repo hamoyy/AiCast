@@ -208,10 +208,10 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             visibility = View.GONE
         }
-        row.addView(homeChip(ctx, "历史") {
+        row.addView(homeChip(ctx, Str.get(R.string.action_history)) {
             showHistory.value = true; historyVersion.value++; syncLayers()
         })
-        row.addView(homeChip(ctx, "设置") {
+        row.addView(homeChip(ctx, Str.get(R.string.action_settings)) {
             showSettings.value = true; syncLayers()
         })
         val lp = LinearLayout.LayoutParams(
@@ -323,7 +323,11 @@ class MainActivity : ComponentActivity() {
                         JSONObject()
                             .put("url", request.url?.toString() ?: "")
                             .put("code", runCatching { error.errorCode }.getOrDefault(-1))
-                            .put("message", runCatching { error.description?.toString() }.getOrNull() ?: "加载失败")
+                            .put(
+                                "message",
+                                runCatching { error.description?.toString() }.getOrNull()
+                                    ?: Str.get(R.string.err_load_failed)
+                            )
                             .toString()
                     )
                 }

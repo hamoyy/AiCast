@@ -98,10 +98,19 @@ object CommandBus {
             s
         }
 
+    /**
+     * 语言标记：内置主题（assets 下的 HTML 主题文件）是静态资源，走不了 Android 资源解析，
+     * 只能由宿主把当前语言塞进页面，页面据它挑星期名/日期格式。
+     * 取值来自 `lang_code` 字符串资源，因此与实际命中的那套文案永远一致。
+     */
+    private fun langScript(): String {
+        val lang = Str.lang.filter { it.isLetter() }.take(8).ifEmpty { "zh" }
+        return """<script>window.__AICAST_LANG__="$lang";</script>"""
+    }
+
     private fun embedSdk(html: String): String {
         val sdk = sdkText()
-        if (sdk.isEmpty()) return html
-        val script = "<script>$sdk</script>"
+        val script = langScript() + if (sdk.isEmpty()) "" else "<script>$sdk</script>"
         val m = Regex("(?i)<head[^>]*>").find(html)
         return if (m != null) {
             html.substring(0, m.range.last + 1) + script + html.substring(m.range.last + 1)

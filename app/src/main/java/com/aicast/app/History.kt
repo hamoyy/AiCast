@@ -116,14 +116,18 @@ object History {
     private val titleRe = Regex("(?is)<title[^>]*>(.*?)</title>")
     private val h1Re = Regex("(?is)<h1[^>]*>(.*?)</h1>")
     private val tagRe = Regex("(?s)<[^>]+>")
-    private val timeFmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
 
-    fun formatTime(ts: Long): String = timeFmt.format(Date(ts))
+    /**
+     * 现用现建：语言切了以后进程未必重启（Activity 重建而已），
+     * 缓存成 val 的话日期会一直停在旧语言的 Locale 上。
+     */
+    fun formatTime(ts: Long): String =
+        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(ts))
 
     private fun extractTitle(html: String): String {
         val raw = titleRe.find(html)?.groupValues?.get(1)
             ?: h1Re.find(html)?.groupValues?.get(1)
         val text = raw?.replace(tagRe, "")?.trim()
-        return if (!text.isNullOrEmpty()) text.take(40) else "未命名投送"
+        return if (!text.isNullOrEmpty()) text.take(40) else Str.get(R.string.history_untitled)
     }
 }

@@ -103,7 +103,9 @@ class AiCastService : Service() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel(channelId, "爱投屏 运行中", NotificationManager.IMPORTANCE_MIN)
+                NotificationChannel(
+                    channelId, Str.get(R.string.notif_channel_name), NotificationManager.IMPORTANCE_MIN
+                )
             )
         }
         val pi = PendingIntent.getActivity(
@@ -112,7 +114,7 @@ class AiCastService : Service() {
         )
         val notif: Notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("爱投屏")
+            .setContentTitle(Str.get(R.string.notif_title))
             .setContentText("${Net.localIp()}:${Server.port}")
             .setContentIntent(pi)
             .setOngoing(true)
@@ -137,7 +139,7 @@ class AiCastService : Service() {
         )
         val notif = NotificationCompat.Builder(this, "core")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("爱投屏")
+            .setContentTitle(Str.get(R.string.notif_title))
             .setContentText(text)
             .setContentIntent(pi)
             .setOngoing(true)

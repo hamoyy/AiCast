@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标（Adaptive Icon）。
+
+  背景层铺满 108dp 画布，前景层只放图形：启动器遮罩裁成圆角方 / 圆 / 水滴
+  任何一种都不会露出垫底色。之前那版是把一个 r=52 的圆画进 drawable 里，
+  小米桌面会给这种非自适应图标额外套一圈白色描边（实测图标方框内缩 5px 处
+  有一条亮度 240 的白线，见 scripts/icon-probe.py），所以必须改成分层。
+
+  图形本身沿用原设计：青绿屏幕 + 深色两条内容线，坐标未改动。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

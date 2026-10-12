@@ -27,13 +27,8 @@ object Themes {
 
     const val NATIVE = "native"
 
-    // 内置 HTML 主题：id -> (显示名, assets 路径)。随包只读，不可被 agent 覆盖。
-    private val BUILTINS = listOf(
-        ThemeMeta("native", "原生时钟", "native", "builtin"),
-        ThemeMeta("aurora", "极光", "html", "builtin"),
-        ThemeMeta("minimal-light", "素白", "html", "builtin"),
-    )
-
+    // 内置 HTML 主题：id -> assets 路径。随包只读，不可被 agent 覆盖。
+    // 显示名走字符串资源（[builtins]），否则切了语言主题名还停在原来的语言上。
     private val builtinAssetPath = mapOf(
         "aurora" to "themes/aurora.html",
         "minimal-light" to "themes/minimal-light.html",
@@ -51,7 +46,12 @@ object Themes {
                 val arr = JSONArray(registryFile.readText())
                 (0 until arr.length()).map { i ->
                     val o = arr.getJSONObject(i)
-                    ThemeMeta(o.getString("id"), o.optString("name", "自定义"), "html", "agent")
+                    ThemeMeta(
+                        o.getString("id"),
+                        o.optString("name", Str.get(R.string.theme_custom)),
+                        "html",
+                        "agent"
+                    )
                 }
             } else emptyList()
         } catch (e: Exception) {
@@ -61,8 +61,15 @@ object Themes {
         return list
     }
 
+    /** 内置主题。每次现算：显示名要跟着当前语言，缓存会把切语言后的名字钉死 */
+    private fun builtins(): List<ThemeMeta> = listOf(
+        ThemeMeta(NATIVE, Str.get(R.string.theme_native), "native", "builtin"),
+        ThemeMeta("aurora", Str.get(R.string.theme_aurora), "html", "builtin"),
+        ThemeMeta("minimal-light", Str.get(R.string.theme_minimal_light), "html", "builtin"),
+    )
+
     /** 全部可选主题：native + 内置 html + agent 注册（按注册顺序） */
-    fun list(): List<ThemeMeta> = BUILTINS + loadAgent()
+    fun list(): List<ThemeMeta> = builtins() + loadAgent()
 
     fun exists(id: String): Boolean = list().any { it.id == id }
 
@@ -94,7 +101,7 @@ object Themes {
      * 返回落盘的 ThemeMeta；html 为空抛异常由调用方处理。
      */
     fun register(html: String, name: String?, id: String?): ThemeMeta {
-        require(html.isNotBlank()) { "html 不能为空" }
+        require(html.isNotBlank()) { Str.get(R.string.theme_err_empty) }
         val tid = (id?.takeIf { it.matches(Regex("[A-Za-z0-9_\\-]{1,40}")) })
             ?: ("t_" + UUID.randomUUID().toString().take(8))
         val title = (name?.trim()?.takeIf { it.isNotEmpty() })
@@ -156,6 +163,6 @@ object Themes {
 
     private fun extractTitle(html: String): String {
         val text = titleRe.find(html)?.groupValues?.get(1)?.replace(tagRe, "")?.trim()
-        return if (!text.isNullOrEmpty()) text.take(40) else "自定义主题"
+        return if (!text.isNullOrEmpty()) text.take(40) else Str.get(R.string.theme_custom_title)
     }
 }

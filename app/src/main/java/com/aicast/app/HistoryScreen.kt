@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,9 +56,12 @@ fun HistoryScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("投送历史", color = hText, fontSize = titleSize, fontWeight = FontWeight.Bold)
                 Text(
-                    "选中一条重新投到屏幕",
+                    stringResource(R.string.history_title),
+                    color = hText, fontSize = titleSize, fontWeight = FontWeight.Bold
+                )
+                Text(
+                    stringResource(R.string.history_subtitle),
                     color = hDim, fontSize = (cfg.screenWidthDp / 42f).sp
                 )
             }
@@ -68,7 +72,7 @@ fun HistoryScreen(
                         .background(hCard)
                         .clickable { onClear() }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
-                ) { Text("清空", color = hDim, fontSize = 13.sp) }
+                ) { Text(stringResource(R.string.action_clear), color = hDim, fontSize = 13.sp) }
                 Spacer(Modifier.width(8.dp))
             }
             // 和设置页同一枚圆形关闭按钮：不再靠"右滑/返回键"这种没提示的退出方式
@@ -82,7 +86,7 @@ fun HistoryScreen(
             ) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "关闭历史",
+                    contentDescription = stringResource(R.string.cd_close_history),
                     tint = hText,
                     modifier = Modifier.size(22.dp)
                 )
@@ -93,7 +97,7 @@ fun HistoryScreen(
         if (entries.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "还没有投送记录\n让 agent 往这台设备投点东西，就会出现在这里",
+                    stringResource(R.string.history_empty),
                     color = hDim, fontSize = 15.sp
                 )
             }
@@ -132,16 +136,18 @@ private fun HistoryRow(e: History.Entry, onReplay: (History.Entry) -> Unit) {
             Spacer(Modifier.height(4.dp))
             // CIO 的 remoteHost 有时返回非 IP 的十六进制串，只在像地址时才展示
             val viaLabel =
-                if (e.via.contains('.') || e.via.contains(':')) e.via else "局域网"
+                if (e.via.contains('.') || e.via.contains(':')) e.via
+                else stringResource(R.string.history_via_lan)
             val sizeLabel =
-                if (e.size < 1024) "${e.size}B" else "%.0fKB".format(e.size / 1024f)
+                if (e.size < 1024) stringResource(R.string.history_size_b, e.size)
+                else stringResource(R.string.history_size_kb, e.size / 1024f)
             val meta = "${History.formatTime(e.ts)}  ·  $viaLabel  ·  $sizeLabel" +
-                if (e.truncated) "  ·  超大仅存摘要" else ""
+                if (e.truncated) "  ·  " + stringResource(R.string.history_truncated) else ""
             Text(meta, color = hDim, fontSize = 12.sp)
         }
         Spacer(Modifier.width(12.dp))
         Text(
-            if (replayable) "重播 ›" else "不可还原",
+            stringResource(if (replayable) R.string.history_replay else R.string.history_not_restorable),
             color = if (replayable) accent else hDim,
             fontSize = 13.sp
         )

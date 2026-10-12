@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>极光</title>
+<title>Aurora</title>
 <style>
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
@@ -57,19 +57,34 @@
   <div class="wrap">
     <div class="time"><span id="hm">--:--</span><span class="sec" id="ss">--</span></div>
     <div class="date" id="date">—</div>
-    <div class="hint">A I F A C E · 极光</div>
+    <div class="hint" id="hint">A I C A S T</div>
   </div>
 <script>
 (function () {
-  var WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  // 语言由宿主注入（window.__AICAST_LANG__），与 app 命中的那套文案资源一致
+  var LANG = (window.__AICAST_LANG__ === 'en') ? 'en' : 'zh';
+  var WD = LANG === 'en'
+    ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    : ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function p(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmtDate(d) {
+    if (LANG === 'en') {
+      return WD[d.getDay()] + ', ' + MON[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+    }
+    return d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日 ' + WD[d.getDay()];
+  }
   function tick() {
     var d = new Date();
     document.getElementById('hm').textContent = p(d.getHours()) + ':' + p(d.getMinutes());
     document.getElementById('ss').textContent = ':' + p(d.getSeconds());
-    document.getElementById('date').textContent =
-      d.getFullYear() + '年' + p(d.getMonth() + 1) + '月' + p(d.getDate()) + '日 ' + WD[d.getDay()];
+    document.getElementById('date').textContent = fmtDate(d);
   }
+  document.documentElement.lang = LANG;
+  document.title = (LANG === 'en') ? 'Aurora' : '极光';
+  document.getElementById('hint').textContent =
+    'A I C A S T · ' + ((LANG === 'en') ? 'Aurora' : '极光');
   tick(); setInterval(tick, 1000);
 
   // 双保险：CSS 已经禁掉滚动/手势，但 WebView 在过扫、多指或电视方向键下

@@ -1,3 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
+
+    <!-- 语言标记：供运行时（WebView 主题注入）判断当前落到哪套资源，勿翻译为其它值 -->
+    <string name="lang_code">zh</string>
+
+    <!-- 应用名 / 常驻通知 -->
     <string name="app_name">爱投屏</string>
+    <string name="notif_channel_name">爱投屏 运行中</string>
+    <string name="notif_title">爱投屏</string>
+
+    <!-- 通用 -->
+    <string name="action_settings">设置</string>
+    <string name="action_history">历史</string>
+    <string name="action_clear">清空</string>
+    <string name="action_confirm">确认</string>
+    <string name="action_modify">修改</string>
+    <string name="cd_close_settings">关闭设置</string>
+    <string name="cd_close_history">关闭历史</string>
+    <string name="yes">是</string>
+    <string name="no">否</string>
+
+    <!-- 待机时钟 -->
+    <string name="mode_public">公开投送</string>
+    <string name="mode_auth">需密码</string>
+
+    <!-- 投送历史 -->
+    <string name="history_title">投送历史</string>
+    <string name="history_subtitle">选中一条重新投到屏幕</string>
+    <string name="history_empty">还没有投送记录\n让 agent 往这台设备投点东西，就会出现在这里</string>
+    <string name="history_via_lan">局域网</string>
+    <string name="history_size_b">%1$dB</string>
+    <string name="history_size_kb">%1$.0fKB</string>
+    <string name="history_truncated">超大仅存摘要</string>
+    <string name="history_replay">重播 ›</string>
+    <string name="history_not_restorable">不可还原</string>
+    <string name="history_untitled">未命名投送</string>
+
+    <!-- 设置：设备名称 -->
+    <string name="settings_device_name">设备名称</string>
+    <string name="settings_name_placeholder">让 agent 知道这是哪台设备</string>
+    <string name="settings_name_done_hint">回车保存 · 点其它空白处收起</string>
+    <string name="settings_name_tap_hint">点击修改名称</string>
+    <string name="settings_name_saved">名称已保存</string>
+
+    <!-- 设置：访问模式 -->
+    <string name="settings_access_mode">访问模式</string>
+    <string name="settings_cast_title">投送</string>
+    <string name="settings_cast_sub">关闭后仍可被搜索到，但投送会被拒绝</string>
+    <string name="settings_cast_on">已开启投送</string>
+    <string name="settings_cast_off">已关闭投送（设备仍可被发现，但会拒绝投送）</string>
+    <string name="settings_pwd_title">密码验证</string>
+    <string name="settings_pwd_sub">关闭 = 公开投送；开启后 agent 需凭密码换 token</string>
+    <string name="settings_pwd_enter_hint">请输入密码后点确认</string>
+    <string name="settings_pwd_off">已关闭密码验证：密码已清除，全部 token 已吊销</string>
+    <string name="settings_pwd_set">已设置密码（重填即修改）</string>
+    <string name="settings_pwd_placeholder">密码（至少 4 位）</string>
+    <string name="settings_pwd_len_err">密码至少 4 位，当前 %1$d 位</string>
+    <string name="settings_pwd_short">密码太短（至少 4 位）</string>
+    <string name="settings_pwd_saved">密码已保存（agent 首次连接需向你索取）</string>
+
+    <!-- 设置：待机主题 -->
+    <string name="settings_theme">待机主题</string>
+    <string name="settings_theme_desc">原生时钟常驻省电；HTML 主题整屏由页面自绘，含 agent 注册的自定义首页</string>
+    <string name="theme_kind_native">内置 · 省电常驻</string>
+    <string name="theme_kind_builtin_html">内置 HTML</string>
+    <string name="theme_kind_agent">agent 注册</string>
+    <string name="settings_theme_switched">已切换主题：%1$s</string>
+
+    <!-- 设置：已授权设备 -->
+    <string name="settings_tokens">已授权的设备（token 30 天有效）</string>
+    <string name="settings_token_current">当前</string>
+    <string name="settings_token_count">%1$d 个 agent 持有有效 token</string>
+    <string name="settings_token_revoke_all">吊销全部 token</string>
+    <string name="settings_token_revoked">已吊销全部 token（agent 需重新输密码）</string>
+
+    <!-- 设置：本机 -->
+    <string name="settings_device">本机</string>
+    <string name="settings_device_id">ID</string>
+    <string name="settings_device_addr">地址</string>
+    <string name="settings_device_form">形态</string>
+    <string name="settings_device_touch">触摸</string>
+
+    <!-- 主题显示名 -->
+    <string name="theme_native">原生时钟</string>
+    <string name="theme_aurora">极光</string>
+    <string name="theme_minimal_light">素白</string>
+    <string name="theme_custom">自定义</string>
+    <string name="theme_custom_title">自定义主题</string>
+    <string name="theme_err_empty">html 不能为空</string>
+
+    <!-- 权限名（/info.open 展示用） -->
+    <string name="perm_render">投送</string>
+    <string name="perm_message">增量</string>
+    <string name="perm_param">参数</string>
+
+    <!-- 给 agent / 用户的引导语 -->
+    <string name="hint_cast_disabled">该设备已关闭投送开关。请让用户在设备上打开「%1$s」→ %2$s → %3$s，然后再试。</string>
+    <string name="err_perm_denied_generic">该设备未开放 %1$s（%2$s）</string>
+    <string name="err_perm_denied_message">该设备未开放 message</string>
+    <string name="err_perm_denied_param">该设备未开放 param</string>
+
+    <!-- HTTP 错误文案（随设备语言，便于直接转述给人看） -->
+    <string name="err_load_failed">加载失败</string>
+    <string name="err_cross_origin">禁止跨站调用（请在本机 / agent 侧发起）</string>
+    <string name="err_content_type">写操作需 Content-Type: application/json</string>
+    <string name="err_unauthorized">需先 POST /auth {password} 换取 token</string>
+    <string name="err_bad_encoding">body 必须是 UTF-8 编码的 JSON</string>
+    <string name="err_payload_too_large">上限 4MB</string>
+    <string name="err_bad_json_object">body 需为 JSON 对象</string>
+    <string name="err_bad_json">body 需为合法 JSON</string>
+    <string name="err_need_password">需要 {password}</string>
+    <string name="err_need_html">需要 {html}</string>
+    <string name="err_need_id">需要 ?id=</string>
+    <string name="err_need_key">需要 key</string>
+    <string name="err_need_value">需要 value(字符串)</string>
+    <string name="err_unknown_theme">无此主题: %1$s（可用: %2$s）</string>
+    <string name="err_unknown_param">不支持: %1$s（可用 %2$s）</string>
+    <string name="err_locked">%1$s（还需等待 %2$d 秒）</string>
+    <string name="auth_public_msg">该设备为公开模式，无需 token</string>
+    <string name="auth_locked_msg">密码错误次数过多，请稍后再试</string>
+    <string name="auth_wrong_password">密码错误</string>
+    <string name="render_queued_msg">设备界面不在前台，内容已排队，打开 app 后立即呈现</string>
+    <string name="err_bad_url">url 仅支持 http/https</string>
+    <string name="err_no_display_url">设备界面未在前台，无法加载 URL</string>
+    <string name="err_msg_no_page">当前没有页面在前台接收，增量消息已丢弃</string>
+
+    <!-- HTTP 媒体相关 -->
+    <string name="perm_hint_register_theme">注册主题复用投送权限</string>
+    <string name="perm_hint_delete_theme">删除主题复用投送权限</string>
+    <string name="perm_hint_upload_media">媒体上传复用投送权限</string>
+    <string name="perm_hint_delete_media">删除媒体复用投送权限</string>
+    <string name="media_limit_mb">媒体上限 %1$dMB</string>
+    <string name="media_no_space">设备存储不足（已给系统盘留底）；先用 DELETE /media?id= 清理</string>
+    <string name="media_need_length">上传需带 Content-Length</string>
+    <string name="media_empty_upload">空上传</string>
+    <string name="media_over_limit">媒体超过单文件上限</string>
+    <string name="media_length_mismatch">body 与 Content-Length 不一致</string>
+    <string name="media_bad_param">媒体参数有误</string>
+    <string name="media_no_storage">设备存储不足</string>
+    <string name="media_write_failed">媒体写入失败</string>
+    <string name="media_not_found">无此媒体: %1$s</string>
+    <string name="media_gone">媒体文件已被清理</string>
+    <string name="media_bad_range">区间超出</string>
+    <string name="media_empty_content">空内容</string>
+    <string name="media_single_too_big">单文件超过 %1$dMB 上限</string>
+
 </resources>

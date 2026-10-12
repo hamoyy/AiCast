@@ -6,7 +6,8 @@
  * 用法:
  *   aicast discover [--timeout 3000] [--address ip:port]
  *   aicast list
- *   aicast auth   <dev> --password <pwd>
+ *   aicast auth   <dev> --password-stdin                  # 推荐：口令走管道
+ *   aicast auth   <dev> --password <pwd>                  # 兼容旧写法（会进 shell history）
  *   aicast info   <dev>
  *   aicast render <dev> (--html-file f.html | --html "<html>" | --url <u> | --clear) [--wake]
  *   aicast message <dev> (--data '<json>' | --data-file f.json)
@@ -38,8 +39,8 @@ function loadStore() {
   catch (e) { return { devices: {} }; }
 }
 function saveStore(s) {
-  fs.mkdirSync(STORE_DIR, { recursive: true });
-  fs.writeFileSync(STORE_FILE, JSON.stringify(s, null, 2));
+  fs.mkdirSync(STORE_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(STORE_FILE, JSON.stringify(s, null, 2), { mode: 0o600 }); // token 明文落盘，仅本人可读
 }
 function resolveDev(key) {
   const s = loadStore();
@@ -50,7 +51,7 @@ function resolveDev(key) {
     return { id, ...d };
   }
   if (/^[\w.-]+(:\d+)?$/.test(key)) return { id: key, address: key.includes(':') ? key : key + ':43210' };
-  die(`未知设备 "${key}"，先执行 aicast discover 或 aicast auth <ip:port> --password …`);
+  die(`未知设备 "${key}"，先执行 aicast discover 或 aicast auth <ip:port> --password-stdin`);
 }
 
 // ---------- http ----------
@@ -74,7 +75,7 @@ async function api(dev, method, p, body, opts = {}) {
   } finally { clearTimeout(timer); }
   let json; try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
   if (res.status === 401) {
-    die(`设备 ${dev.id} 需要鉴权：先运行 aicast auth ${dev.address} --password <用户设置的密码>`, json);
+    die(`设备 ${dev.id} 需要鉴权：先运行 aicast auth ${dev.address} --password-stdin`, json);
   }
   // 429：防爆破锁定（计数已落盘，进程重启不会清零）
   if (res.status === 429) {
@@ -116,6 +117,7 @@ function discover(timeoutMs) {
   return new Promise((resolve) => {
     const found = {}; // instance -> {name, port, target, txt, ip}
     const hostnames = {}; // srv target -> ip
+    const diag = [];
     const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     const query = Buffer.concat([
       Buffer.from([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]),  // ID=0 flags=0 QDCOUNT=1 AN/NS/AR=0
@@ -132,13 +134,19 @@ function discover(timeoutMs) {
       void rinfo;
     }
     sock.on('message', onData);
-    sock.on('error', () => {});
+    // bind 失败（5353 被占用 / 无权限）时回调根本不会执行，必须在这里兜底 resolve，
+    // 否则 await discover() 会永久挂起。diag 一并带回给调用方，别再让失败变成"没有任何设备"。
+    sock.on('error', (e) => {
+      diag.push('socket_error: ' + ((e && e.message) || String(e)));
+      try { sock.close(); } catch (e2) { void e2; }
+      resolve({ devices: found, diag });
+    });
     sock.bind({ address: '0.0.0.0', port: 5353, exclusive: false }, () => {
-      try { sock.addMembership('224.0.0.251'); } catch (e) { /* 部分网络不允许组播 */ }
+      try { sock.addMembership('224.0.0.251'); } catch (e) { diag.push('join_multicast_failed: ' + e.message); }
       // dgram 签名是 send(msg, port, address)——顺序错了会抛异常
-      const send = () => { try { sock.send(query, 5353, '224.0.0.251'); } catch (e) { console.error('mdns send failed:', e.message); } };
+      const send = () => { try { sock.send(query, 5353, '224.0.0.251'); } catch (e) { diag.push('send_failed: ' + e.message); } };
       send(); setTimeout(send, Math.floor(timeoutMs / 3)); setTimeout(send, Math.floor(timeoutMs / 2));
-      setTimeout(() => { try { sock.close(); } catch (e) {} resolve(found); }, timeoutMs);
+      setTimeout(() => { try { sock.close(); } catch (e) {} resolve({ devices: found, diag }); }, timeoutMs);
     });
   });
 }
@@ -182,11 +190,13 @@ async function cmdDiscover(args) {
   const timeout = parseInt(args['timeout'] || '3000', 10);
   const store = loadStore();
   let devices = [];
+  let mdnsDiag = [];
   if (args.address) {
     devices = [{ address: normAddr(args.address), source: 'manual' }];
   } else {
-    const found = await discover(timeout);
-    devices = Object.entries(found).filter(([, d]) => d.ip && d.port)
+    const r = await discover(timeout);
+    mdnsDiag = r.diag || [];
+    devices = Object.entries(r.devices).filter(([, d]) => d.ip && d.port)
       .map(([inst, d]) => ({ id: (d.txt && d.txt.deviceId) || inst, address: d.ip + ':' + d.port, source: 'mdns', _txt: d.txt, _name: d.name }));
     if (!devices.length) {
       // mDNS 无结果：回退探测已保存设备是否在线
@@ -217,7 +227,9 @@ async function cmdDiscover(args) {
     }
   }
   saveStore(store);
-  console.log(JSON.stringify({ ok: true, devices: out }, null, 1));
+  const res = { ok: true, devices: out };
+  if (mdnsDiag.length) res.mdnsDiag = mdnsDiag; // 让"发现不到"有可查的原因，而不是空数组
+  console.log(JSON.stringify(res, null, 1));
 }
 function cmdList() {
   const s = loadStore();
@@ -227,9 +239,22 @@ function cmdList() {
   }));
   console.log(JSON.stringify({ ok: true, devices: out }, null, 1));
 }
+function readStdin() {
+  return new Promise((resolve) => {
+    let buf = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (c) => { buf += c; });
+    process.stdin.on('end', () => resolve(buf.trim()));
+  });
+}
 async function cmdAuth(key, args) {
   const dev = resolveDev(key);
-  const pwd = args.password || '';
+  // 密码走管道或环境变量，不落进 shell history，也不出现在 ps 里
+  let pwd = '';
+  if (args['password-stdin']) pwd = await readStdin();
+  else if (typeof args.password === 'string') pwd = args.password;
+  else if (process.env.AICAST_PASSWORD) pwd = process.env.AICAST_PASSWORD;
+  if (!pwd) die('auth 需要密码：用 --password-stdin（口令走管道）或设置 AICAST_PASSWORD');
   const r = await api(dev, 'POST', '/auth', { password: pwd });
   const s = loadStore();
   // /info 是公开端点：拿权威 deviceId，把 <ip> 键的记录并入规范化键，避免同一设备重复
@@ -261,6 +286,10 @@ async function cmdRender(key, args) {
   else if (args.url) body.url = args.url;
   else if (args.clear) body = {};
   else die('render 需要 --html-file / --html / --url / --clear 之一');
+  if (body.html) {
+    const bytes = Buffer.byteLength(body.html, 'utf8');
+    if (bytes > 4 * 1024 * 1024) die(`HTML 本体 ${(bytes / 1048576).toFixed(2)}MB 超过 /render 的 4MB 上限`);
+  }
   if (args.wake) body.wake = true;
   console.log(JSON.stringify(await api(dev, 'POST', '/render', body, { timeoutMs: 30000 }), null, 1));
 }
@@ -360,6 +389,7 @@ async function cmdMedia(key, pos, args) {
   const file = pos[0];
   if (!file) die('media 需要 <file>（或 --list / --remove <id>）');
   const buf = fs.readFileSync(file);
+  if (buf.length > 32 * 1024 * 1024) die(`媒体 ${(buf.length / 1048576).toFixed(2)}MB 超过设备 32MB 配额，会被 413 挡回`);
   const name = String(args.name || path.basename(file));
   const ext = (name.split('.').pop() || '').toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
@@ -373,10 +403,9 @@ async function cmdMedia(key, pos, args) {
     text = await res.text();
   } finally { clearTimeout(timer); }
   let json; try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
-  if (res.status === 401) die(`设备 ${dev.id} 需要鉴权：先运行 aicast auth ${dev.address} --password <pwd>`, json);
+  if (res.status === 401) die(`设备 ${dev.id} 需要鉴权：先运行 aicast auth ${dev.address} --password-stdin`, json);
   if (json.ok && json.url) {
-    const host = dev.address.split(':')[0];
-    json.absoluteUrl = `http://${host}:43210${json.url}`; // 直接可嵌进 <audio>/<img> src
+    json.absoluteUrl = `http://${dev.address}${json.url}`; // 端口跟随设备真实端口，不要写死 43210
   }
   console.log(JSON.stringify(json, null, 1));
   if (!json.ok) process.exitCode = 1;
@@ -414,7 +443,7 @@ async function main() {
     switch (cmd) {
       case 'discover': return await cmdDiscover(args);
       case 'list': return cmdList();
-      case 'auth': need(devKey, 'auth <dev|ip:port> --password <pwd>'); return await cmdAuth(devKey, args);
+      case 'auth': need(devKey, 'auth <dev|ip:port> --password-stdin'); return await cmdAuth(devKey, args);
       case 'info': need(devKey); return await cmdInfo(devKey);
       case 'render': need(devKey); return await cmdRender(devKey, args);
       case 'message': need(devKey); return await cmdMessage(devKey, args);

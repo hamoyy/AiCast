@@ -100,9 +100,18 @@ object Media {
      */
     fun commit(name: String, type: String, tmp: File): Meta {
         val size = tmp.length()
-        if (size <= 0) { tmp.delete(); throw IllegalArgumentException("空内容") }
-        if (size > MAX_SINGLE_BYTES) { tmp.delete(); throw IllegalStateException("单文件超过 ${MAX_SINGLE_BYTES / 1024 / 1024}MB 上限") }
-        if (!hasRoom(size)) { tmp.delete(); throw IllegalStateException("设备存储不足") }
+        if (size <= 0) {
+            tmp.delete(); throw IllegalArgumentException(Str.get(R.string.media_empty_content))
+        }
+        if (size > MAX_SINGLE_BYTES) {
+            tmp.delete()
+            throw IllegalStateException(
+                Str.get(R.string.media_single_too_big, MAX_SINGLE_BYTES / 1024 / 1024)
+            )
+        }
+        if (!hasRoom(size)) {
+            tmp.delete(); throw IllegalStateException(Str.get(R.string.media_no_storage))
+        }
         val meta = Meta(
             id = "m_" + UUID.randomUUID().toString().take(8) + "." + extOf(name),
             name = name.trim().take(80).ifEmpty { "media" },

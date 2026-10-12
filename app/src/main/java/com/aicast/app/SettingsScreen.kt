@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -71,6 +73,17 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
     var focusPwd by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // 事件回调（点击/开关/提交）不是 @Composable 作用域，里面不能用 stringResource，
+    // 而 msg/pwdErr 恰恰都在回调里赋值 —— 所以在组合期一次性取好，回调直接引用。
+    val sNameSaved = stringResource(R.string.settings_name_saved)
+    val sCastOn = stringResource(R.string.settings_cast_on)
+    val sCastOff = stringResource(R.string.settings_cast_off)
+    val sPwdEnterHint = stringResource(R.string.settings_pwd_enter_hint)
+    val sPwdOff = stringResource(R.string.settings_pwd_off)
+    val sPwdTooShort = stringResource(R.string.settings_pwd_short)
+    val sPwdSaved = stringResource(R.string.settings_pwd_saved)
+    val sTokenRevoked = stringResource(R.string.settings_token_revoked)
 
     // 离开设置页就把软键盘收掉：否则窗口会一直停在"给键盘留了位置"的缩小状态，
     // 回到待机页下半屏是黑的（实测 mIsInputViewShown 一直是 true，回主界面也一样）
@@ -106,7 +119,10 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
             .padding(20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("设置", color = textMain, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(
+                stringResource(R.string.action_settings),
+                color = textMain, fontSize = 24.sp, fontWeight = FontWeight.Bold
+            )
             Spacer(Modifier.weight(1f))
             Box(
                 modifier = Modifier
@@ -118,7 +134,7 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                 // 用矢量图标而非文本"✕"：电视系统字体缺该字形会渲染成空白
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "关闭设置",
+                    contentDescription = stringResource(R.string.cd_close_settings),
                     tint = textMain,
                     modifier = Modifier.size(22.dp)
                 )
@@ -129,22 +145,22 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
         // 设备名称改成「点一下才编辑」：常驻输入框是个焦点磁铁 —— 一旦别处的
         // 输入框被移除，系统会做焦点搜索并把光标塞进最上面这个编辑框（关掉
         // 密码验证时就是这样跳过去的）。改成非编辑态时它压根不是输入框。
-        Section("设备名称") {
+        Section(stringResource(R.string.settings_device_name)) {
             if (nameEditing) {
                 EditRow(
                     value = name,
-                    placeholder = "让 agent 知道这是哪台设备",
+                    placeholder = stringResource(R.string.settings_name_placeholder),
                     onChange = { name = it },
                     onDone = { v ->
                         val n = v.trim()
-                        if (n.isNotEmpty()) { Prefs.name = n; msg = "名称已保存"; onChanged() }
+                        if (n.isNotEmpty()) { Prefs.name = n; msg = sNameSaved; onChanged() }
                         nameEditing = false
                         keyboard?.hide()   // 不收键盘的话它会一直盖住下半屏，回待机页还在
                     },
                     modifier = Modifier.focusRequester(nameBox)
                 )
                 Text(
-                    "回车保存 · 点其它空白处收起",
+                    stringResource(R.string.settings_name_done_hint),
                     color = textDim, fontSize = 12.sp,
                     modifier = Modifier.padding(top = 6.dp)
                 )
@@ -160,33 +176,35 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(name, color = textMain, fontSize = 16.sp)
-                        Text("点击修改名称", color = textDim, fontSize = 12.sp)
+                        Text(
+                            stringResource(R.string.settings_name_tap_hint),
+                            color = textDim, fontSize = 12.sp
+                        )
                     }
-                    Text("修改", color = accent, fontSize = 13.sp)
+                    Text(stringResource(R.string.action_modify), color = accent, fontSize = 13.sp)
                 }
             }
         }
 
         // 访问模式放在最上面：投送总开关 + 密码验证，是别人能不能碰这台设备的两道门
-        Section("访问模式") {
+        Section(stringResource(R.string.settings_access_mode)) {
             // ① 投送总开关：关掉只是拒绝投送，设备照样被局域网发现
             ToggleRow(
-                title = "投送",
-                sub = "关闭后仍可被搜索到，但投送会被拒绝",
+                title = stringResource(R.string.settings_cast_title),
+                sub = stringResource(R.string.settings_cast_sub),
                 checked = cast,
                 onToggle = { on ->
                     Prefs.castEnabled = on
                     cast = on
                     onChanged()
-                    msg = if (on) "已开启投送"
-                    else "已关闭投送（设备仍可被发现，但会拒绝投送）"
+                    msg = if (on) sCastOn else sCastOff
                 }
             )
             Spacer(Modifier.height(14.dp))
             // ② 密码验证：默认关 = 公开投送；打开才要设密码
             ToggleRow(
-                title = "密码验证",
-                sub = "关闭 = 公开投送；开启后 agent 需凭密码换 token",
+                title = stringResource(R.string.settings_pwd_title),
+                sub = stringResource(R.string.settings_pwd_sub),
                 focusRequester = pwdSwitchBox,
                 checked = pwdOn,
                 onToggle = { on ->
@@ -195,7 +213,7 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                         pwdOn = true
                         pwdErr = null
                         focusPwd = true          // 焦点落到密码框，别跑去顶部的设备名称
-                        msg = "请输入密码后点确认"
+                        msg = sPwdEnterHint
                     } else {
                         // 关闭不要求验证旧密码：直接清密码 + 吊销全部 token
                         Prefs.clearPassword()
@@ -205,18 +223,19 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                         pwd = ""
                         pwdErr = null
                         onChanged()
-                        msg = "已关闭密码验证：密码已清除，全部 token 已吊销"
+                        msg = sPwdOff
                     }
                 }
             )
             if (pwdOn) {
                 Spacer(Modifier.height(12.dp))
                 if (Prefs.hasPassword()) {
-                    Text("已设置密码 ✓（重填即修改）", color = accent, fontSize = 13.sp)
+                    // 不写 ✓：电视系统字体缺该字形会渲染成空白（和 ThemeRow 同理）
+                    Text(stringResource(R.string.settings_pwd_set), color = accent, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                 }
                 EditRow(
-                    pwd, "密码（至少 4 位）",
+                    pwd, stringResource(R.string.settings_pwd_placeholder),
                     onChange = { pwd = it; pwdErr = null },
                     password = true,
                     modifier = Modifier.focusRequester(pwdBox)
@@ -234,8 +253,10 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                         .background(accent, RoundedCornerShape(10.dp))
                         .clickable {
                             if (pwd.length < 4) {
-                                pwdErr = "密码至少 4 位，当前 ${pwd.length} 位"
-                                msg = "密码太短（至少 4 位）"
+                                // 带参数的文案没法预先取（pwd.length 在回调里才知道），
+                                // 非组合作用域一律走 Str.get
+                                pwdErr = Str.get(R.string.settings_pwd_len_err, pwd.length)
+                                msg = sPwdTooShort
                             } else {
                                 Prefs.setPassword(pwd)   // 内含 revokeAll，旧 token 立即失效
                                 Prefs.mode = "auth"
@@ -245,17 +266,22 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                                 keyboard?.hide()
                                 focus.clearFocus(force = true)
                                 onChanged()
-                                msg = "密码已保存（agent 首次连接需向你索取）"
+                                msg = sPwdSaved
                             }
                         },
                     contentAlignment = Alignment.Center
-                ) { Text("确认", color = bgDark, fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(
+                        stringResource(R.string.action_confirm),
+                        color = bgDark, fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
-        Section("待机主题") {
+        Section(stringResource(R.string.settings_theme)) {
             Text(
-                "原生时钟常驻省电；HTML 主题整屏由页面自绘，含 agent 注册的自定义首页",
+                stringResource(R.string.settings_theme_desc),
                 color = textDim, fontSize = 12.sp
             )
             Spacer(Modifier.height(6.dp))
@@ -263,40 +289,56 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                 ThemeRow(
                     name = t.name,
                     sub = when {
-                        t.kind == "native" -> "内置 · 省电常驻"
-                        t.source == "builtin" -> "内置 HTML"
-                        else -> "agent 注册"
+                        t.kind == "native" -> stringResource(R.string.theme_kind_native)
+                        t.source == "builtin" -> stringResource(R.string.theme_kind_builtin_html)
+                        else -> stringResource(R.string.theme_kind_agent)
                     },
                     selected = theme == t.id,
                     onClick = {
                         Prefs.theme = t.id
                         theme = t.id
                         HomeRefresh.invalidate()
-                        msg = "已切换主题：${t.name}"
+                        msg = Str.get(R.string.settings_theme_switched, t.name)
                     }
                 )
             }
         }
 
         if (mode == "auth" && Prefs.hasPassword()) {
-            Section("已授权的设备（token 30 天有效）") {
-                Info("当前", "${Auth.activeCount()} 个 agent 持有有效 token")
+            Section(stringResource(R.string.settings_tokens)) {
+                Info(
+                    stringResource(R.string.settings_token_current),
+                    stringResource(R.string.settings_token_count, Auth.activeCount())
+                )
                 Spacer(Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
                         .height(44.dp)
                         .fillMaxWidth()
                         .background(Color(0xFF3A2430), RoundedCornerShape(10.dp))
-                        .clickable { Auth.revokeAll(); msg = "已吊销全部 token（agent 需重新输密码）" },
+                        .clickable {
+                            Auth.revokeAll()
+                            msg = sTokenRevoked
+                        },
                     contentAlignment = Alignment.Center
-                ) { Text("吊销全部 token", color = Color(0xFFE58C8C), fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(
+                        stringResource(R.string.settings_token_revoke_all),
+                        color = Color(0xFFE58C8C), fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
-        Section("本机") {
-            Info("ID", Prefs.deviceId)
-            Info("地址", "${Net.localIp()}:${Server.port}")
-            Info("形态", "${DeviceInfo.deviceClass()} · 触摸:${if (DeviceInfo.isTouch()) "是" else "否"}")
+        Section(stringResource(R.string.settings_device)) {
+            Info(stringResource(R.string.settings_device_id), Prefs.deviceId)
+            Info(stringResource(R.string.settings_device_addr), "${Net.localIp()}:${Server.port}")
+            Info(
+                stringResource(R.string.settings_device_form),
+                "${DeviceInfo.deviceClass()} · ${stringResource(R.string.settings_device_touch)}:" +
+                    if (DeviceInfo.isTouch()) stringResource(R.string.yes)
+                    else stringResource(R.string.no)
+            )
         }
 
         msg?.let {
@@ -394,7 +436,9 @@ private fun EditRow(
 @Composable
 private fun Info(k: String, v: String) {
     Row(modifier = Modifier.padding(vertical = 2.dp)) {
-        Text(k, color = textDim, fontSize = 13.sp, modifier = Modifier.width(48.dp))
+        // minWidth 而非固定 width：英文键名比中文长得多（「Form factor」≈72dp），
+        // 写死宽度会把它们压成两行，把值顶下去；这里只保证短键名（ID）也对齐
+        Text(k, color = textDim, fontSize = 13.sp, modifier = Modifier.widthIn(min = 56.dp))
         Text(v, color = textMain, fontSize = 13.sp)
     }
 }

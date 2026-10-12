@@ -1,0 +1,233 @@
+{
+  "schema_version": "1",
+  "capabilities": [
+    "discover-devices",
+    "read-device-profile",
+    "render-html",
+    "read-events",
+    "manage-theme",
+    "upload-media"
+  ],
+  "dependencies": [
+    {
+      "id": "node-runtime",
+      "type": "runtime",
+      "required": true,
+      "auth_type": "none",
+      "capabilities": [
+        "discover-devices",
+        "read-device-profile",
+        "render-html",
+        "read-events",
+        "manage-theme",
+        "upload-media"
+      ],
+      "checks": [
+        {
+          "id": "node-on-path",
+          "type": "cli",
+          "command": "node",
+          "required": true
+        }
+      ],
+      "setup": {
+        "official_home_url": "https://nodejs.org",
+        "official_docs_url": "https://nodejs.org/en/docs",
+        "download_url": "https://nodejs.org/en/download",
+        "steps": [
+          "到 nodejs.org 下载 LTS 版本（需 18 或更高）并安装",
+          "重新打开终端，执行 node --version 确认版本号 ≥ v18",
+          "不需要额外安装包：bin/aicast 为零依赖单文件脚本"
+        ],
+        "verify": "node --version（输出需 ≥ v18）",
+        "security": "CLI 只使用 dgram、fs、os、path 与内置 fetch，不访问凭据之外的系统资源。设备 token 明文存于 ~/.aicast/devices.json，文件权限 0600、目录 0700。设备密码只经 --password-stdin 管道或 AICAST_PASSWORD 传入，不写进命令历史。",
+        "verified_at": "2026-10-12",
+        "applies_to_version": "Node.js 18 及以上"
+      },
+      "degradation": [
+        {
+          "capability": "discover-devices",
+          "trigger": "PATH 中找不到 node，或版本低于 18",
+          "fallback": "改用 curl 向已登记设备的 http://<ip>:<port>/info 直接探测，不依赖 mDNS 发现",
+          "user_input": "目标设备的 IP 与端口（待机时钟底部显示 IP；端口默认 43210，被占用则顺延）",
+          "limitations": "没有 mDNS 广播发现，只能逐个探测已知地址；设备未登记时无法自动找到",
+          "evidence_label": "未验证",
+          "recovery": "安装 Node 18+ 后重新运行 scripts/check_environment.py",
+          "stop_condition": "既无 Node 又无从获知设备地址时停止，不猜测地址"
+        },
+        {
+          "capability": "read-device-profile",
+          "trigger": "PATH 中找不到 node，或版本低于 18",
+          "fallback": "用 curl 调 GET /info 读取画像 JSON 原文",
+          "user_input": "设备 IP 与端口",
+          "limitations": "无 CLI 的字段规范化，需自行按 /info 结构解读；老版本 app 缺 accepting 字段时按 true 处理",
+          "evidence_label": "未验证",
+          "recovery": "安装 Node 18+ 后重新运行 scripts/check_environment.py",
+          "stop_condition": "设备地址未知时停止"
+        },
+        {
+          "capability": "render-html",
+          "trigger": "PATH 中找不到 node，或版本低于 18",
+          "fallback": "用 curl 发 POST /render，需自带 Authorization 与 Content-Type 两个头，正文为 {\"html\":\"...\"}",
+          "user_input": "设备 IP 与端口、auth 模式下的 token",
+          "limitations": "中文需自行保证 UTF-8 编码；无 4MB 客户端预检；跨站请求带 Origin 会被 403 拒绝",
+          "evidence_label": "未验证",
+          "recovery": "安装 Node 18+ 后重新运行 scripts/check_environment.py",
+          "stop_condition": "auth 模式且拿不到 token 时停止，不得猜测或爆破密码"
+        },
+        {
+          "capability": "read-events",
+          "trigger": "PATH 中找不到 node，或版本低于 18",
+          "fallback": "用 curl 调 GET /events?since=N 拉取，自行处理 reset 标记与 seq 推进",
+          "user_input": "设备 IP 与端口、起始 seq",
+          "limitations": "无自动续拉与 --follow 节流，长轮询需自行控制；设备重启后缓冲清空需自行识别 reset",
+          "evidence_label": "未验证",
+          "recovery": "安装 Node 18+ 后重新运行 scripts/check_environment.py",
+          "stop_condition": "设备地址未知时停止"
+        },
+        {
+          "capability": "manage-theme",
+          "trigger": "PATH 中找不到 node，或版本低于 18",
+          "fallback": "用 curl 调 GET /themes、POST /theme、DELETE /theme?id=<id> 管理主题",
+          "user_input": "设备 IP 与端口、主题 HTML 内容",
+          "limitations": "无本地模板校验；注册主题仍需遵守 Chromium 66 基线，需人工自查",
+          "evidence_label": "未验证",
+          "recovery": "安装 Node 18+ 后重新运行 scripts/check_environment.py",
+          "stop_condition": "设备地址未知时停止"
+        },
+        {
+          "capability": "upload-media",
+          "trigger": "PATH 中找不到 node，或版本低于 18",
+          "fallback": "用 curl 发 POST /media 上传 raw body，需自带 Content-Length",
+          "user_input": "设备 IP 与端口、待上传文件",
+          "limitations": "无 32MB 客户端预检；返回的 url 只有路径，需自行拼成 http://<ip>:<port>/media/<id>",
+          "evidence_label": "未验证",
+          "recovery": "安装 Node 18+ 后重新运行 scripts/check_environment.py",
+          "stop_condition": "无 Node 且需上传大文件时停止，避免反复触发 413/507"
+        }
+      ]
+    }
+  ],
+  "functional_degradations": [
+    {
+      "capability": "discover-devices",
+      "trigger": "discover 返回空列表，或输出中出现 mdnsDiag（socket_error / join_multicast_failed / send_failed）",
+      "fallback": "按 mdnsDiag 定位原因后改用 discover --address <ip[:port]> 手动登记；CLI 也会自动回退探测 ~/.aicast/devices.json 里已保存的设备",
+      "user_input": "设备待机时钟底部显示的 IP；端口非默认时写成 ip:port",
+      "limitations": "手动登记无法自动发现新设备，设备换 IP 后需重新登记",
+      "evidence_label": "部分验证",
+      "recovery": "放开本机 5353/UDP 组播后重新 discover；若属 ROM 拦截开机自启，请用户手动打开一次 app",
+      "stop_condition": "手动登记地址也不可达时停止，转告用户 app 可能未在前台运行"
+    },
+    {
+      "capability": "discover-devices",
+      "trigger": "设备在线且可被发现，但 /info 中 accepting 为 false",
+      "fallback": "不重试、不换设备，原样转述 acceptingHint 给用户，请其到设备上打开「爱投屏」→ 访问模式 → 投送",
+      "user_input": "用户在设备上完成开关操作后的一句话确认",
+      "limitations": "在用户操作前无法投送，任何 render 都会收到 403 cast_disabled",
+      "evidence_label": "已验证",
+      "recovery": "用户打开投送开关后重新 info 确认 accepting 变 true",
+      "stop_condition": "用户明确拒绝开启投送时结束本次投送，不得尝试绕过"
+    },
+    {
+      "capability": "read-device-profile",
+      "trigger": "GET /info 超时或连接被拒（app 被清后台、设备休眠、IP 变更）",
+      "fallback": "提示用户把 app 切回前台或 render --wake 亮屏后再取；仍不通则改用上次成功缓存的画像",
+      "user_input": "用户确认 app 已在前台",
+      "limitations": "缓存画像可能已过期（屏幕方向、联网状态、深色模式都可能变）",
+      "evidence_label": "部分验证",
+      "recovery": "设备回到前台后重新 info",
+      "stop_condition": "连续取不到画像时停止生成内容，不用旧画像冒充当前状态"
+    },
+    {
+      "capability": "read-device-profile",
+      "trigger": "/info 返回中没有 accepting 字段（老版本 app）",
+      "fallback": "按可接受投送处理；后续 render 若收到 403 cast_disabled 再按该分支处置",
+      "user_input": "无",
+      "limitations": "无法提前知道投送开关状态，只能在 render 时才发现",
+      "evidence_label": "已验证",
+      "recovery": "升级设备端 app 到带 accepting 字段的版本",
+      "stop_condition": "无"
+    },
+    {
+      "capability": "render-html",
+      "trigger": "POST /render 返回 202 且 ok:true、queued:true",
+      "fallback": "视为正常路径，不重试；用 state 查 pending，pending 为 true 表示仍在队列，设备回前台会自动呈现",
+      "user_input": "需要立即上屏时请用户打开一次 app，或改用 render --wake",
+      "limitations": "内容何时真正上屏取决于用户何时把 app 切回前台",
+      "evidence_label": "已验证",
+      "recovery": "设备回前台后 pending 转 false，内容自动呈现",
+      "stop_condition": "不得把 202 当作失败反复重投"
+    },
+    {
+      "capability": "render-html",
+      "trigger": "POST /render 返回 401",
+      "fallback": "先执行 auth 换取 token 后重试一次",
+      "user_input": "设备访问密码（由用户口述或走管道提供，不得猜测或爆破）",
+      "limitations": "public 模式设备不会返回 401；auth 模式每次 token 过期都需重新 auth",
+      "evidence_label": "已验证",
+      "recovery": "auth 成功后 token 持久化 30 天",
+      "stop_condition": "用户拒绝提供密码或连续触发 429 锁定时停止"
+    },
+    {
+      "capability": "render-html",
+      "trigger": "POST /render 返回 429（密码连错 5 次锁定 60 秒，计数落盘）",
+      "fallback": "按响应中的 retryAfterMs 等待后重试，不缩短间隔、不换密码继续试",
+      "user_input": "正确密码（需向用户重新确认）",
+      "limitations": "锁定期间任何 auth 都会失败，重启 app 也无法清除计数",
+      "evidence_label": "已验证",
+      "recovery": "等待锁定自动解除，或直接改用 public 模式设备",
+      "stop_condition": "多次仍失败时停止，不得持续尝试密码"
+    },
+    {
+      "capability": "render-html",
+      "trigger": "HTML 本体超过 4MB（CLI 已做客户端预检，服务端上限同为 4MB）",
+      "fallback": "压缩内联资源、改用外链或 /media、或把长内容拆成多页轮播",
+      "user_input": "无",
+      "limitations": "拆页后需自行维护页间顺序与轮播节奏",
+      "evidence_label": "已验证",
+      "recovery": "压到 4MB 以内后重新 render",
+      "stop_condition": "无法压到 4MB 以内时不投送，不投出会被静默拒绝的内容"
+    },
+    {
+      "capability": "read-events",
+      "trigger": "events 返回结构中 reset 为 true（设备重启，环形缓冲已清空）",
+      "fallback": "CLI 自动把 since 归零从头续拉，无需用户干预；调用方只需继续按返回的 seq 推进",
+      "user_input": "无",
+      "limitations": "设备重启前未取走的最多 200 条事件已永久丢失",
+      "evidence_label": "已验证",
+      "recovery": "无需恢复，续拉即可；重要事件应在页面侧做幂等回传",
+      "stop_condition": "无"
+    },
+    {
+      "capability": "manage-theme",
+      "trigger": "theme --remove 删除的正是当前激活的主题",
+      "fallback": "设备自动退回 native 原生时钟首页，按预期行为告知用户即可",
+      "user_input": "需要保持特定首页时，请用户重新指定主题或重新注册",
+      "limitations": "删除后原主题 HTML 不可恢复，需重新注册",
+      "evidence_label": "已验证",
+      "recovery": "用 theme --register 重新注册，或改用内置主题 aurora / minimal-light",
+      "stop_condition": "内置主题不可删除，收到该错误时停止，不尝试强制删除"
+    },
+    {
+      "capability": "upload-media",
+      "trigger": "单个媒体文件超过 32MB（CLI 已做预检，服务端返回 413）",
+      "fallback": "压小后再传：降码率、裁时长，或压到 80kbps 单声道",
+      "user_input": "无",
+      "limitations": "32MB 是设备环形配额约束，不是协议层面的 64MB",
+      "evidence_label": "已验证",
+      "recovery": "压到 32MB 以内后重新 media 上传",
+      "stop_condition": "压不下去时改用外链或放弃本机上传，不得改投别的设备绕开配额"
+    },
+    {
+      "capability": "upload-media",
+      "trigger": "POST /media 返回 507（设备 32MB 环形配额已满）",
+      "fallback": "先用 media --list 查看，再 media --remove 清理旧项，或把音频压小重传",
+      "user_input": "可安全删除的旧媒体项 id（删除会使引用它的旧链接失效）",
+      "limitations": "配额满时淘汰最旧的媒体项，刚传的不会被挤掉，但旧链接会失效；引用前需确认该项仍在",
+      "evidence_label": "已验证",
+      "recovery": "清理出空间后重新上传；设备侧另有 72 小时自动清理",
+      "stop_condition": "不得把一台设备当另一台设备的网盘跨设备搬媒体"
+    }
+  ]
+}

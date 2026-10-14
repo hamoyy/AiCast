@@ -13,10 +13,13 @@
     <string name="action_settings">设置</string>
     <string name="action_history">历史</string>
     <string name="action_clear">清空</string>
+    <string name="action_delete">删除</string>
+    <string name="action_cancel">取消</string>
     <string name="action_confirm">确认</string>
     <string name="action_modify">修改</string>
     <string name="cd_close_settings">关闭设置</string>
     <string name="cd_close_history">关闭历史</string>
+    <string name="cd_delete_entry">删除这条历史</string>
     <string name="yes">是</string>
     <string name="no">否</string>
 
@@ -35,6 +38,7 @@
     <string name="history_replay">重播 ›</string>
     <string name="history_not_restorable">不可还原</string>
     <string name="history_untitled">未命名投送</string>
+    <string name="history_confirm_delete_title">确认删除这条历史？</string>
 
     <!-- 设置：设备名称 -->
     <string name="settings_device_name">设备名称</string>

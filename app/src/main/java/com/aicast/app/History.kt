@@ -85,6 +85,13 @@ object History {
         synchronized(this) { items.clear(); persist() }
     }
 
+    /** 单向删除单条记录（id 不存在时静默忽略） */
+    fun remove(id: String) {
+        synchronized(this) {
+            if (items.removeIf { it.id == id }) persist()
+        }
+    }
+
     /** 仅元数据（不含 html），供 GET /history 与列表 UI 用 */
     fun listJson(): String {
         val arr = JSONArray()

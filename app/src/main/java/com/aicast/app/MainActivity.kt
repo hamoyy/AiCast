@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
                                     e.html?.let { CommandBus.renderHtml(it) }
                                     showHistory.value = false
                                 },
+                                onDelete = { History.remove(it.id); historyVersion.value++ },
                                 onClear = { History.clear(); historyVersion.value++ },
                                 onBack = { showHistory.value = false; syncLayers() }
                             )

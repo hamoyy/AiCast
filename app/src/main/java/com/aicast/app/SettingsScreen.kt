@@ -7,13 +7,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -115,6 +120,10 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(bgDark)
+            // 背景铺满整屏（含安全区）之后再避让：顺序反了的话，避让带会露出主题纯黑，
+            // 和本页的 #0B0E12 拼出一条色差带。只避让屏幕切口——状态栏/导航栏在沉浸
+            // 模式下是隐藏的浮层，不需要为它们留位。
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
             .verticalScroll(rememberScrollState())
             .padding(20.dp)
     ) {

@@ -90,7 +90,7 @@
           "trigger": "PATH 中找不到 node，或版本低于 18",
           "fallback": "用 curl 调 GET /themes、POST /theme、DELETE /theme?id=<id> 管理主题",
           "user_input": "设备 IP 与端口、主题 HTML 内容",
-          "limitations": "无本地模板校验；注册主题仍需遵守 Chromium 66 基线，需人工自查",
+          "limitations": "无本地模板校验；注册主题仍需遵守画像 device.webview.major 对应的语法档位（见 SKILL.md 铁律第 6 条），需人工自查",
           "evidence_label": "未验证",
           "recovery": "安装 Node 18+ 后重新运行 scripts/check_environment.py",
           "stop_condition": "设备地址未知时停止"

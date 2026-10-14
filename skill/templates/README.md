@@ -5,8 +5,11 @@
 同样的意图投到手机和电视上，本就该长成两个样子。
 
 模板遵守同一铁律：HTML 本体单文件（CSS/JS 内联，设备默认可联网、可引外链真图/CDN）、`viewport-fit=cover`、
-`env(safe-area-inset-*)` 避让挖孔/刘海、通过内置 `AiCast` SDK 回传事件。
+挖孔/刘海避让用画像的 `screen.cutoutInsets`（**别用 `env()`**，实测它在本 app 的 WebView 里恒为 0）、
+通过内置 `AiCast` SDK 回传事件。
 样式为深色高对比基线，可按 `info` 里的 `appearance.darkMode` 反转。
+**写法按画像 `device.webview.major` 分档**（SKILL.md 铁律第 6 条）；本目录模板统一只用保守档安全集，
+故 WebView 65 起的全机队通用。
 
 「回传事件」列可直接用于 `$A events` 过滤。
 **命名规则：事件名务必带点号**（`todo.toggle` 而非 `toggle`），且不要以
@@ -21,7 +24,7 @@
 | `rich-article.html` | touch 或 auto | 图文文章范式：hero + 内联 SVG 配图 + 引文 + 统计块 + 标签；直接替换 `<div class="page">` 内容 | — |
 | `remote-briefing.html`（电视实测效果佳） | remote · 电视 | 自动轮播 + 遥控器接管：◀▶ 翻页、OK 暂停/继续（左下角"已暂停"标签 + 帮助条 + 顶部进度条）；`SLIDES` 数组填充 | `slide.played{by:"auto"\|"nav"}`、`remote.pause` |
 | `lunch-roulette-touch.html` | touch · 手机竖屏 | 老虎机式随机选择小游戏（示例"中午吃什么"）：点卡片/按钮滚动、再点停、锁定；替换 `FOODS` 数组即可复用为任意"随机抽一个"决策器；**注意变量勿叫 `name`**（与 `window.name` 冲突会静默失效） | `lunch.spin`、`lunch.pick` |
-| `lunch-roulette-tv.html`（电视实测效果佳） | remote · 电视 | 同游戏的遥控版：进页面 1.2s 自动摇一次当吸引演示；OK 摇/停、↑ 锁定、↓ 再摇；底部键位提示条；`FOODS` 数组填充；CSS 按 Chromium 66 基线 | `lunch.spin{by:"tv"}`、`lunch.pick{by:"tv"}` |
+| `lunch-roulette-tv.html`（电视实测效果佳） | remote · 电视 | 同游戏的遥控版：进页面 1.2s 自动摇一次当吸引演示；OK 摇/停、↑ 锁定、↓ 再摇；底部键位提示条；`FOODS` 数组填充；CSS 保守档写法 | `lunch.spin{by:"tv"}`、`lunch.pick{by:"tv"}` |
 | `audio-player-tv.html`（电视真实出声） | remote / auto · 电视或大屏 | 音频播放页：`<audio>` 播现成音轨（示例用 OpenGameArt 的 `Red Curtain`，HorrorPen · CC-BY 3.0，页面内已标注来源；换成别的音轨时同样要在页面标注授权与来源）；进页试播、被拦等 OK/点击；进度条+时长；OK 暂停/恢复。已知坑：旧 TV WebView 别用 WebAudio 现场合成（出噪音）、`<audio>` 勿加 `crossorigin`、mp3 最稳；外链不通时用 `aicast media` 把音频传到播放它的那台设备、或压小后 data URI 内嵌（详见 SKILL.md「音频投送」） | `track.play{src\|auto}`、`track.pause{at}`、`track.ended`、`track.error` |
 
 ## audioserver.js（局域网音频兜底服务器）

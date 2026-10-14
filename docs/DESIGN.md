@@ -184,7 +184,7 @@
 |---|---|---|
 | `aicast discover [--timeout ms] [--address ip[:port]]` | — | mDNS 浏览；返回 **name/class/touch/mode/开放权限/address/accepting** |
 | `aicast list` | — | 已保存设备（含 authed 状态） |
-| `aicast auth <dev> --password <pwd>` | — | `POST /auth`，换 token 并持久化（30 天，多 token 并存） |
+| `aicast auth <dev> --password-stdin` | — | `POST /auth`，换 token 并持久化（30 天，多 token 并存；口令走管道，不用命令行明文） |
 | `aicast info <dev>` | — | `GET /info`（完整设备画像，含 internet 实测状态） |
 | `aicast render <dev> --html-file f \| --html '<h>' \| --url u \| --clear [--wake]` | — | `POST /render` |
 | `aicast message <dev> --data '<json>' \| --data-file f` | — | `POST /message` |
@@ -229,7 +229,10 @@
 ```jsonc
 {
   "deviceId":"dev_a","name":"客厅大屏","mode":"public","authRequired":false,
-  "open":["render","message"],          // 当前调用者可用的权限项
+  "accepting":true,                     // 投送总开关；false 时才会多出 acceptingHint
+  "open":["render","message","param"],  // 权限开关清单（固定这三个名字，见 §2.2）
+  "capabilities":["render","themes","media","message","param","theme","volume",
+                  "brightness","fontScale","state","events","history"],
   "device":{
     "class":"tv",                       // phone | tablet | tv | wearable
     "manufacturer":"Sony","model":"BRAVIA","osVersion":"12",
@@ -240,17 +243,21 @@
     },
     "interactionModel":"auto",          // touch | remote | auto —— 给 agent 的核心提示
     "largeScreen":true,                 // 大屏/远距离观看
-    "recommendedFontScale":1.6          // 远看建议放大字号
+    "diagonalInches":55.0,              // 对角线（由 分辨率/densityDpi 算出）
+    "recommendedFontScale":1.8,         // 远看建议放大字号
+    "webview":{                         // 内容能用哪些 CSS/JS 全看它，见 §7.2
+      "engine":"chromium","version":"66.0.3359.158","major":66,
+      "package":"com.google.android.webview"   // API 26 以下取不到，为 null
+    }
   },
   "screen":{"widthPx":3840,"heightPx":2160,"widthDp":960,"heightDp":540,
             "density":4.0,"densityDpi":640,"orientation":"landscape",
-            "orientationLocked":true,"refreshRate":60,
-            "safeInsets":{"top":0,"bottom":0,"left":0,"right":0}},
-  "appearance":{"darkMode":true,"fontScale":1.0},
+            "orientationLocked":true,"refreshRate":60,"fontScale":1.0,
+            "cutoutInsets":{"top":0,"bottom":0,"left":0,"right":0}},   // dp，刘海/挖孔避让
+  "appearance":{"darkMode":true},
+  "internet":{"state":"online","validated":true,"transport":"wifi"},   // 设备端实测
   "system":{"android":"12","battery":null,"charging":true,"screenOn":true},
-  "capabilities":["render","message","param","screen","tts","volume","torch",
-                  "vibrate","notify","clipboard","launchApp"],
-  "app":{"version":"0.1.0","evalEnabled":false}
+  "app":{"version":"0.1.0-m1","port":43210}
 }
 ```
 
@@ -259,6 +266,10 @@
 - `touch`：`PackageManager.hasSystemFeature(FEATURE_TOUCHSCREEN)` + 实测；`dpad`：leanback / 遥控特征。
 - `orientation`/`orientationLocked`：当前 `Configuration.orientation` + 系统旋转锁；TV 通常恒为 landscape。
 - `interactionModel`（派生）：`touch=true → "touch"`；`touch=false && dpad=true → "remote"`；`touch=false && dpad=false → "auto"`。
+- `diagonalInches` / `recommendedFontScale`（派生）：对角线 ÷ `densityDpi`，≥40 寸给 1.8、≥20 寸给 1.4、其余 1.0。
+- `device.webview`：见 §7.2。
+- `screen.cutoutInsets`：`WindowManager.currentWindowMetrics` 的 `displayCutout` insets（API 30+）；
+  API 28~29 回退到 Activity 的 `rootWindowInsets`；API 28 以下恒 0（无挖孔概念）。
 
 **横竖屏/暗色/低电量变化**写入事件缓冲，agent `get_events` 拉到 `capability.changed` 后重渲染。
 
@@ -274,6 +285,41 @@
 - **横竖屏切换** → `capability.changed` → agent 重新按新方向生成（竖屏单列 ↔ 横屏多列）。
 - 这套策略写进 **SKILL.md**（§12），让任何 agent 装上 Skill 就"懂"如何按画像发挥，而不必自己摸索。
 - **强调：以上分支全在 agent/Skill 侧。app 自身不读 `class` 做任何差异化逻辑**——app 只保证①准确上报画像 ②WebView 内容可被遥控器 D-pad 导航 ③把投来的 HTML 原样渲染。
+
+### 7.2 内容能力档位：WebView 内核版本（`device.webview`）
+
+> `device.webview.major` 决定 agent 生成的 HTML 里**能用哪些 CSS 与 JS 语法**。
+> 它与 `class`/`interactionModel` 是**两根正交的轴**：后者决定布局与交互形态，前者决定语言能力。
+
+**为什么必须单独上报，而且推不出来：**
+- WebView 是**独立可升级的 APK**（`com.google.android.webview` / `com.android.chrome` / `com.android.webview`），
+  与系统版本各走各的更新通道，厂商电视固件基本冻结版本。
+- 实测三台：Android 7.1 手机 → **65**、Android TV → **66**、Android 13 手机 → **116**。
+  与 `osVersion`、型号**没有因果关系**。
+- 不报的代价两头都吃：新机被按旧基线写（白放弃 `aspect-ratio`、flex `gap`、`dvh` 等），
+  旧机踩 `inset`/`clamp()`/`gap` 被**静默丢弃**（不报错，只是元素塌掉）。
+  最严重的是 **JS 语法**：旧内核不认 `?.` / `??` 时整段 `<script>` 直接解析失败、交互全丢，
+  而页面不会有任何报错。
+
+**取法（两段式，因为 API 26 以下没有官方接口）：**
+1. `WebView.getCurrentWebViewPackage()`（**API 26+，无参静态**）→ `versionName` 就是 `116.0.5845.92`；
+   Android 7.1.2 上返回 `null`。
+2. 回退 `WebSettings.getDefaultUserAgent(ctx)`，正则抠 `Chrome/(\d+(\.\d+)*)` —— UA 形如
+   `… Version/4.0 Chrome/65.0.3325.110 Mobile Safari/537.36`。
+
+**实现注意**：`getDefaultUserAgent` 会**触发 WebView 初始化**（加载 native 库），所以必须懒加载 + 缓存，
+不能在每次 `/info` 现算；缓存只在真拿到 `major > 0` 时写入，否则内核尚未就绪时会把 `unknown` 永久钉住。
+
+**agent 侧用法**（完整规则见 SKILL.md《HTML 生成铁律》第 6 条）：按 `major` 分档取写法 ——
+`< 66` 保守档 / `66~107` 保守档（且 flex `gap` 仍不生效）/ `≥ 108` 放开现代 CSS；
+JS 侧 `major < 80` 禁用 `?.`、`??`、`||=`、`??=`。字段缺失或 `major:0` 一律按保守档处理。
+
+### 7.3 刘海/挖孔避让：`screen.cutoutInsets`
+
+沉浸式全屏下页面拿不到安全区：实测 `viewport-fit=cover` 时 `env(safe-area-inset-*)` **恒为 `0px`**
+（Mi 10 挖孔就在左上角，页面里读它仍读到 0），旧内核更是连 `env()` 都不认。所以由画像直接给出
+四个方向的避让值，单位 **dp**（与页面 CSS px 同量级，页面可直接当 `padding` 用）。
+API 28 以下恒为 0，无需避让。
 
 ---
 
@@ -325,7 +371,7 @@ await AiCast.getInfo()      // 页面内查 §7 能力
 
 ```
 ┌─────────────────────────────┐
-│  客厅大屏            ● 公开   │ ← 顶栏：设备名 + 公开/认证状态徽标
+│          ● 公开  历史  设置  │ ← 右上角：状态徽标 + 历史/设置（贴顶）
 │                             │
 │         09:41               │ ← 大字号时钟（跟随 theme 明暗）
 │      2026年9月21日 周一       │ ← 日期
@@ -333,15 +379,20 @@ await AiCast.getInfo()      // 页面内查 §7 能力
 │  🌡 26°C  ☀ 晴   （可选）     │ ← 预留位：未来可放天气等
 │                             │
 │ IP 192.168.1.20:43210       │ ← 底栏信息条
-│ ID dev_a   开放:投送/增量     │ ← 唯一标识 + 当前开放权限
+│ 客厅大屏                     │ ← 设备名
 └─────────────────────────────┘
 ```
-- **顶栏**：设备名称 + 公开状态徽标（公开=绿点"开放投送"；认证=锁标）。
+- **右上角**：公开/认证状态徽标（公开=绿点"公开投送"；认证=橙点"需密码"）+ 历史 + 设置。
+  **贴顶**：待机面板不跟着状态栏/挖孔下移——避让原本是为了保护左上角的设备名，
+  但手机上会把右上角入口推到半空；名称挪走后顶部只留右侧一组，与 HTML 主题那层原生浮标同位。
 - **中部**：时钟/日期，明暗随 `theme`，夜间自动暗色低亮。
-- **底栏**：IP:端口、`deviceId`、已开放权限摘要（方便人眼确认这台能干嘛）。
+- **底栏**：IP:端口 + 设备名。名称原先在左上角会和挖孔抢位；`deviceId` 只用于寻址，
+  显示在 `/info` 与设置页「本机」里。
 - **响应式而非分支**：用相对单位（vw/vh/`sp`）+ 约束布局，同一套待机页在手机竖屏、平板、电视横屏巨幕都自动撑满好看，**不写 `if(class==tv)` 这类分支**（遵守 v7 铁律）。
 - **遥控器兼容**：待机页与投送内容的可聚焦元素支持 D-pad 焦点移动 + 选中（Android TV 上可用遥控操作）。
-- 收到 `render` 即切到投送内容；内容页可调 `AiCast` 回到待机或 agent `render` 空内容回时钟。
+- 收到 `render` 即切到投送内容；`render` 空内容（或 `--clear`）即回时钟。
+- **页面侧没有现成的"回待机"方法** —— SDK 只暴露 `emit` / `onMessage` / `getInfo` 三个（§9）。
+  内容若要自己清屏，得由页面 `POST /render` 空 body，并满足 §5 的跨站与鉴权约束。
 - 视觉风格：极简、深色友好、大字号、圆角，Material 3。
 
 ### 10.1 待机主题系统（首页可切换）
@@ -406,6 +457,9 @@ Skill 不只是"传输管道"，它承载了 **让任意 agent 都会用好 AiCa
 1. **传输与发现**：mDNS 发现、密码换 token、调 REST/long-poll、保存设备清单（由内置 CLI 完成）。
 2. **画像驱动的生成策略**（最关键）：SKILL.md 里写明 §7.1 的决策表与铁律——
    - "**永远先 `aicast info`**，按 `class/touch/orientation/interactionModel` 分支生成"；
+   - "**按 `device.webview.major` 选语法与 CSS 档位**"（§7.2）：旧内核禁用 `inset`/`clamp()`/flex `gap`
+     与现代 JS 语法（`?.`/`??` 会让整段 `<script>` 解析失败），对照 SKILL.md 铁律第 6 条；
+   - "**挖孔避让用 `screen.cutoutInsets`**，不要用 `env()`"（§7.3、铁律第 3 条）；
    - 电视(`auto`) → 自动播放轮播、巨字、深色高对比，**不要放需要点击的交互**；
    - 手机/平板(`touch`) → 交互内容，按钮/表单用 `AiCast.emit` 回传；
    - 遥控器(`remote`) → 自动播放为主，可加 D-pad 焦点导航；
@@ -433,7 +487,6 @@ aicast-skill/
 
 - 模式 + **逐项权限开关**：公开默认只开 `render/message`，敏感项用户自行决定是否开放。
 - 认证模式：密码换 token，Skill 长期保存。
-- `eval_js` 默认关。
 - WebView 来源白名单、禁文件域。
 - 可在 app 内一键：关闭 mDNS 广播（隐身）、改密码、撤销 token、切模式。
 
@@ -447,7 +500,6 @@ aicast/
 ├─ protocol/           // 共享：REST schema / 事件类型（Kotlin ↔ Skill 对齐）
 ├─ app/                // Android (Kotlin, Gradle, Compose)：内置 server + WebView
 ├─ skill/              // agent 端 Skill（SKILL.md + CLI/脚本，无 MCP）
-├─ examples/           // 可选 HTML 演示：todo / dashboard / form（仅示例）
 └─ README.md
 ```
 
@@ -465,7 +517,7 @@ aicast/
 | **M5** | 双向：JS SDK + `/events` long-poll + `capability.changed` 自适应 + 截图 | 点页面按钮 agent 近实时收到；旋转/暗色触发重渲染；拿到截图 |
 | **M6** | **遥控器/D-pad 兼容**（leanback、焦点导航、Android TV 可装可操作） | TV 上无触摸，用遥控即可浏览待机页与可聚焦内容 |
 | **M7** | 系统控制 `/system`（TTS/音量/手电/震动/通知/剪贴板/启动） | 逐项授权后 AI 能控制对应能力 |
-| **M8** | 屏幕/作息（on/off/dim/night + 定时）+ 开机自启（尽力而为）+ 加固 + `examples/` | 夜间自动暗色/息屏；手机重启恢复，电视重启提示手动打开；多设备分别控制 |
+| **M8** | 屏幕/作息（on/off/dim/night + 定时）+ 开机自启（尽力而为）+ 加固 | 夜间自动暗色/息屏；手机重启恢复，电视重启提示手动打开；多设备分别控制 |
 
 ---
 

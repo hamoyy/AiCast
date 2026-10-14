@@ -1,7 +1,8 @@
 <!doctype html>
 <!-- 遥控简报（interactionModel=remote 范式）：自动轮播为主，方向键 ◀▶ 手动翻页，确认键(OK/Enter)暂停/继续。
      回传事件：slide.played {index,title,by:"auto"|"nav"} · remote.pause {paused}
-     CSS 兼容基线 Chromium 66（电视 WebView 无法升级）：不用 inset/clamp/min/max/flex-gap，或双声明回退。 -->
+     CSS 参照：按画像 device.webview.major 定档（SKILL.md 铁律第 6 条）。本模板只用保守档安全集
+     （不用 inset / clamp() / flex 的 gap / dvh），WebView 65 起的全机队通用。 -->
 <html lang="zh">
 <head>
 <meta charset="utf-8">

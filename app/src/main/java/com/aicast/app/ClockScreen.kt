@@ -14,12 +14,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -76,7 +81,7 @@ fun aiCastColors() = androidx.compose.material3.darkColorScheme(
 
 /**
  * 待机时钟大屏（§10）：响应式、不按设备类型分支。
- * 顶栏=名称+状态徽标；中部=时钟/日期；底栏=IP:端口/deviceId/开放权限。
+ * 右上=状态徽标+历史/设置；中部=时钟/日期；底栏=IP:端口/设备名。
  * 背景为低干扰科技动效（漂移光晕 + 细点阵），时间用等宽数字防抖动。
  */
 @Composable
@@ -94,18 +99,20 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                // 待机页是「面板」不是「页面」：整栏内容不再跟着状态栏/挖孔一起下移。
+                // 避让原本是为了保护左上角的设备名，但代价是右上角入口被推到半空
+                // （手机挖孔屏尤其明显）；名称挪走后，顶部只留右侧一组，贴顶即可，
+                // 与 HTML 主题那层原生浮标的位置一致。左右仍避让，横屏侧边挖孔不会压到文案。
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 顶栏
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    Prefs.name,
-                    color = valueColor,
-                    fontSize = (cfg.screenWidthDp / 40f).sp,
-                    maxLines = 1
-                )
-                Spacer(Modifier.weight(1f))
+            // 右上角一组：公开/认证徽标 + 历史 + 设置
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 val isPublic = Prefs.mode == "public"
                 Box(
                     modifier = Modifier
@@ -141,15 +148,18 @@ fun ClockScreen(onSettings: () -> Unit = {}, onHistory: () -> Unit = {}) {
             // 中部时钟（tick 状态局限在本组件，每秒只重组这一块）
             ClockBlock(timeSize = timeSize)
 
-            // 底栏信息条
+            // 底栏信息条：设备名顶替 deviceId——名称原先在左上角，正好和挖孔抢位；
+            // deviceId 只是寻址用，仍在 /info 与设置页「本机」里查得到
             Column {
                 Text(
                     "IP  ${Net.localIp()}:${Server.port}",
                     color = labelColor, fontSize = (cfg.screenWidthDp / 45f).sp
                 )
                 Text(
-                    "ID  ${Prefs.deviceId}",
-                    color = labelColor, fontSize = (cfg.screenWidthDp / 45f).sp
+                    Prefs.name,
+                    color = valueColor,
+                    fontSize = (cfg.screenWidthDp / 40f).sp,
+                    maxLines = 1
                 )
             }
         }

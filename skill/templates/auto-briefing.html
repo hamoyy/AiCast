@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- 自动轮播简报：零交互、自动播放（TV 形态的内容范式）；每页停留 5s，播完回传 slide.played
-     CSS 兼容基线：老 WebView（Chromium 66，常见于电视）不支持 inset/clamp/min/max/flex-gap，
-     全部采用"先回退值、再现代值覆盖"的渐进增强写法。 -->
+     CSS 参照：别写死基线，先看画像 device.webview.major 再定写法（见 SKILL.md 铁律第 6 条）。
+     本模板只用保守档安全集——不用 inset / clamp() / flex 的 gap / dvh，故 WebView 65 起的全机队通用。 -->
 <html lang="zh">
 <head>
 <meta charset="utf-8">

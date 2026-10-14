@@ -18,7 +18,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateOf
@@ -62,11 +61,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = aiCastColors()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .safeDrawingPadding()
-                    ) {
+                    // 安全区不由这一层统一避让：待机面板（原生时钟/HTML 主题）本来就贴边显示；
+                    // 设置页/历史页各自在「背景铺满之后」再避让切口，否则避让带会露出
+                    // 主题纯黑，和页面底色拼出一条色差带。
+                    Box(modifier = Modifier.fillMaxSize()) {
                         settingsVersion.value // 订阅：设置页关闭后重组
                         historyVersion.value // 订阅：历史清空后重组
                         themeVersion.value   // 订阅：主题切换后重组
@@ -359,7 +357,7 @@ class MainActivity : ComponentActivity() {
         }
 
     // 沉浸态必须显式设 STICKY：Android 7~10 默认行为下用户一触屏状态栏就永久回来，
-    // 叠加 safeDrawingPadding 的避让会在顶部堆出一条大空带；Flyme 还需在重获焦点时重施
+    // 状态栏一回来就会压住待机页顶部那排入口；Flyme 还需在重获焦点时重施
     private fun applyImmersive() {
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())

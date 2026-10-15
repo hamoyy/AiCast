@@ -106,19 +106,42 @@ object History {
         return arr.toString()
     }
 
+    /**
+     * 落盘线程。
+     *
+     * persist() 是在 /render 的请求线程上调用的，而这里是**全量重写**整个文件；
+     * 单条上限 2MB × 10 条意味着最坏情况要写 ~20MB，同步写会明显拖住响应
+     * （docs/REVIEW-2026-10-08.md 第 18 条早就点出过，当时上限还是 512KB）。
+     *
+     * 所以：内存态改动仍然同步生效（UI 立刻看到），只有磁盘写入挪到这里。
+     * 单线程保证落盘顺序与调用顺序一致；进程若在写入完成前被杀，丢的是最后
+     * 一次变更——历史数据，可以接受。
+     */
+    private val writer: java.util.concurrent.ExecutorService =
+        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "aicast-history-writer").apply { isDaemon = true }
+        }
+
+    /** 序列化当前内存态（**调用方必须已持有本对象的锁**） */
+    private fun snapshot(): String {
+        val arr = JSONArray()
+        items.forEach {
+            arr.put(
+                JSONObject()
+                    .put("id", it.id).put("ts", it.ts).put("title", it.title)
+                    .put("via", it.via).put("size", it.size).put("truncated", it.truncated)
+                    .put("html", it.html ?: JSONObject.NULL)
+            )
+        }
+        return arr.toString()
+    }
+
+    /** 排一次落盘（**调用方必须已持有本对象的锁**）：锁内只做序列化，写盘交给 [writer] */
     private fun persist() {
-        try {
-            val arr = JSONArray()
-            items.forEach {
-                arr.put(
-                    JSONObject()
-                        .put("id", it.id).put("ts", it.ts).put("title", it.title)
-                        .put("via", it.via).put("size", it.size).put("truncated", it.truncated)
-                        .put("html", it.html ?: JSONObject.NULL)
-                )
-            }
-            file.writeText(arr.toString())
-        } catch (e: Exception) { /* 写失败不影响本次会话内存态 */ }
+        val json = try { snapshot() } catch (e: Exception) { return }
+        writer.execute {
+            try { file.writeText(json) } catch (e: Exception) { /* 写失败不影响本次会话内存态 */ }
+        }
     }
 
     private val titleRe = Regex("(?is)<title[^>]*>(.*?)</title>")

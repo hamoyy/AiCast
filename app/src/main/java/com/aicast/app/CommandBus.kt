@@ -282,19 +282,6 @@ object Ui {
         val pm = App.ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         pm.isInteractive
     } catch (e: Exception) { true }
-
-    /**
-     * 保持屏幕常亮的开关。
-     *
-     * 夜间熄屏时段会把它摘掉——这是普通 app 唯一合法的"关屏"手段：不申请任何特殊权限，
-     * 松开常亮后交给系统自己的「屏幕超时」去熄屏（真正熄屏、背光也灭、省电）。
-     * 想立刻变暗可以配合 [setWindowBrightness] 传一个极小值。
-     */
-    @Suppress("DEPRECATION")
-    fun setKeepAwake(a: Activity, on: Boolean) {
-        if (on) a.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else a.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
 }
 
 /**

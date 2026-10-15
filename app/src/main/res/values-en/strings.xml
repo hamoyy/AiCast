@@ -73,16 +73,6 @@
     <string name="theme_kind_agent">Registered by agent</string>
     <string name="settings_theme_switched">Theme switched: %1$s</string>
 
-    <!-- Settings: night screen-off -->
-    <string name="settings_screen">Night screen-off</string>
-    <string name="settings_screen_desc">Inside this window the app stops keeping the screen on, letting the system screen timeout turn it off</string>
-    <string name="settings_screen_from">From e.g. 22:30</string>
-    <string name="settings_screen_to">To e.g. 07:00</string>
-    <string name="settings_screen_note">Leave both empty to disable. To really go dark, set the device screen timeout to 15–30 s (a normal app cannot force the screen off)</string>
-    <string name="settings_screen_saved">Night screen-off window saved</string>
-    <string name="settings_screen_off">Night screen-off disabled</string>
-    <string name="settings_screen_bad">Bad time format: use 24h HH:mm (e.g. 22:30), or leave both empty</string>
-
     <!-- Settings: authorized agents -->
     <string name="settings_tokens">Authorized agents (tokens valid for 30 days)</string>
     <string name="settings_token_current">Active</string>

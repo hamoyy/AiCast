@@ -1,8 +1,6 @@
 package com.aicast.app
 
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -29,10 +27,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import org.json.JSONObject
-import java.util.Calendar
-
-/** 昼夜状态重新判定的间隔：时段是分钟级的，30 秒足够，又不至于频繁改窗口属性 */
-private const val SCREEN_TICK_MS = 30_000L
 
 class MainActivity : ComponentActivity() {
 
@@ -49,16 +43,6 @@ class MainActivity : ComponentActivity() {
     // 已载入的家模式主题 id：避免每次开关设置页都把整屏主题重载一遍（丢状态 + 刷屏 system.page）
     private var homeLoadedTheme: String? = null
 
-    /** 当前是否处于「夜间熄屏」状态；null = 本次启动还没判定过 */
-    private var screenOffActive: Boolean? = null
-    private val uiHandler = Handler(Looper.getMainLooper())
-    private val screenTick = object : Runnable {
-        override fun run() {
-            applyScreenState()
-            uiHandler.postDelayed(this, SCREEN_TICK_MS)
-        }
-    }
-
     private val requestNotificationPerm = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { /* 没授权也能跑，只是看不到常驻通知 */ }
@@ -72,7 +56,7 @@ class MainActivity : ComponentActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         applyImmersive()
-        // 屏幕常亮不在这里硬加了：夜间熄屏时段要能把它摘掉，统一交给 applyScreenState() 管
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         setContent {
             MaterialTheme(colorScheme = aiCastColors()) {
@@ -91,11 +75,7 @@ class MainActivity : ComponentActivity() {
                                     settingsVersion.value++
                                     syncLayers()
                                 },
-                                onChanged = {
-                                    NsdAdvertiser.restart(applicationContext)
-                                    // 屏幕时段可能刚被改过，立刻重判一次，不用等下一次 tick
-                                    applyScreenState()
-                                }
+                                onChanged = { NsdAdvertiser.restart(applicationContext) }
                             )
                         } else if (hasContent.value) {
                             // 内容显示中：WebView 覆盖层负责呈现，Compose 层留空
@@ -150,9 +130,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { hasContent.value = false; homeLoadedTheme = null; syncLayers() }
         }
 
-        // 冷启动先按当前时间判定一次（顺带把持久化的亮度回放上），再起定时器跟着时间走
-        applyScreenState()
-        uiHandler.postDelayed(screenTick, SCREEN_TICK_MS)
+        Ui.applyPersistedBrightness(this)   // 冷启动回放亮度，否则界面与 /param 报告不一致
         ensureNotificationPermission()
         CommandBus.flushPending()           // 把界面不在期间排队的投送补上
 
@@ -194,55 +172,6 @@ class MainActivity : ComponentActivity() {
                 showHomeTheme()
             }
         }
-    }
-
-    /**
-     * 按当前时间应用「夜间熄屏」状态。
-     *
-     * 时段内：摘掉「保持屏幕常亮」+ 亮度压到最低。**注意这不是"强制关屏"**——
-     * 普通 app 没有这个权限（goToSleep 要系统签名、lockNow 要设备管理员，而本项目
-     * 承诺不碰设备管理员）。松开常亮后，屏幕由系统自己的「屏幕超时」关掉，
-     * 所以**需要用户把设备的熄屏超时设短**（15~30 秒），否则要等很久才黑。
-     *
-     * 时段外：恢复常亮 + 用户设定的亮度；若刚跨出时段且屏幕已被系统熄掉，
-     * 主动把屏幕点回来。
-     *
-     * 状态没变就直接返回——每 30 秒都动一次窗口属性会把界面刷得很难看。
-     */
-    private fun applyScreenState() {
-        val cal = Calendar.getInstance()
-        val now = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        val off = ScreenSchedule.inOffWindow(now, Prefs.screenOffFrom, Prefs.screenOffTo)
-        if (off == screenOffActive) return
-        val leavingNight = screenOffActive == true
-        screenOffActive = off
-        if (off) {
-            Ui.setKeepAwake(this, false)
-            Ui.setWindowBrightness(this, 0.01f)   // 立刻变暗；LCD 背光仍亮，真熄屏靠系统超时
-        } else {
-            Ui.setKeepAwake(this, true)
-            Ui.applyPersistedBrightness(this)
-            if (leavingNight && !Ui.isScreenOn()) wakeScreen()
-        }
-    }
-
-    /**
-     * 把屏幕点回来。系统熄屏后本 Activity 已是 stopped 状态，光加 FLAG_TURN_SCREEN_ON
-     * 不会生效，得把它拉回前台。singleTask + SINGLE_TOP 走 onNewIntent，页面不会被重建。
-     */
-    @Suppress("DEPRECATION")
-    private fun wakeScreen() {
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-        )
-        startActivity(
-            android.content.Intent(this, MainActivity::class.java).addFlags(
-                android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-            )
-        )
     }
 
     /** Android 13+：前台服务的常驻通知必须被授权才可见（README 里说的"点允许"，代码之前没申请） */
@@ -478,7 +407,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        uiHandler.removeCallbacks(screenTick)
         if (HomeRefresh.request != null) HomeRefresh.request = null
         if (App.activity === this) App.activity = null
         App.webView = null

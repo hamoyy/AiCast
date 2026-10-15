@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
     // 主题切换时 +1：驱动 Compose 在"原生时钟 / HTML 主题占位"间重选，并触发 syncLayers 重载
     private val themeVersion = mutableStateOf(0)
     private var webView: WebView? = null
-    private var homeControls: View? = null   // HTML 主题下浮层的"设置/历史"入口（原生主题隐藏）
+    private var homeControls: LinearLayout? = null   // HTML 主题下浮层的"设置/历史"入口（原生主题隐藏）
     // 已载入的家模式主题 id：避免每次开关设置页都把整屏主题重载一遍（丢状态 + 刷屏 system.page）
     private var homeLoadedTheme: String? = null
 
@@ -223,18 +223,22 @@ class MainActivity : ComponentActivity() {
 
     private fun homeChip(ctx: android.content.Context, label: String, onClick: () -> Unit): TextView {
         val pad = dp(10)
+        // 焦点必须有可见反馈：浮标能聚焦但看不出来，等于没法操作
+        fun bg(focused: Boolean) = GradientDrawable().apply {
+            setColor(Color.parseColor(if (focused) "#E62A323D" else "#80151A21"))
+            cornerRadius = dp(20).toFloat()
+            if (focused) setStroke(dp(2), Color.parseColor("#4CC2A5"))
+        }
         return TextView(ctx).apply {
             text = label
             setTextColor(Color.parseColor("#E6EAF0"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             gravity = Gravity.CENTER
             setPadding(pad * 2, pad / 2 + dp(2), pad * 2, pad / 2 + dp(2))
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#80151A21"))
-                cornerRadius = dp(20).toFloat()
-            }
+            background = bg(false)
             isFocusable = true
             isClickable = true
+            setOnFocusChangeListener { v, hasFocus -> v.background = bg(hasFocus) }
             setOnClickListener { onClick() }
             val mLp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -248,21 +252,44 @@ class MainActivity : ComponentActivity() {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN &&
-            !hasContent.value && !showSettings.value && !showHistory.value
-        ) {
-            // 电视端待机：方向键「左」→ 投送历史（触摸端用手势右滑）
-            if (event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
-                showHistory.value = true
-                historyVersion.value++
-                syncLayers()   // HTML 主题下需把最上层 WebView 隐藏，历史页才露得出来
-                return true
-            }
-            // 电视端待机：MENU 键 → 设置（确定性入口，不依赖焦点漫游到浮标）
-            if (event.keyCode == KeyEvent.KEYCODE_MENU) {
-                showSettings.value = true
-                syncLayers()
-                return true
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val row = homeControls
+            // 焦点是否已落在右上角浮标上（浮标只在 HTML 待机主题下可见）
+            val onChips = row != null && row.visibility == View.VISIBLE && row.findFocus() != null
+
+            if (!hasContent.value && !showSettings.value && !showHistory.value) {
+                // 电视端待机：方向键「左」→ 投送历史（触摸端用手势右滑）
+                // 焦点已在浮标上时不抢：那时左右键要在「历史/设置」两枚浮标之间移动
+                if (!onChips && event.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                    showHistory.value = true
+                    historyVersion.value++
+                    syncLayers()   // HTML 主题下需把最上层 WebView 隐藏，历史页才露得出来
+                    return true
+                }
+                // 电视端待机：MENU 键 → 设置（确定性入口，不依赖焦点漫游到浮标）
+                if (event.keyCode == KeyEvent.KEYCODE_MENU) {
+                    showSettings.value = true
+                    syncLayers()
+                    return true
+                }
+
+                // HTML 待机主题：WebView 会把方向键吃掉（禁缩放只挡住了缩放平移，页内导航仍会吞键），
+                // 焦点永远漫游不到最上层这两枚浮标。在 Activity 层接管（早于焦点视图）：
+                //   上/右 → 浮标「历史」；浮标上按 下 → 交回 WebView
+                if (row != null && row.visibility == View.VISIBLE) {
+                    if (!onChips &&
+                        (event.keyCode == KeyEvent.KEYCODE_DPAD_UP ||
+                            event.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) &&
+                        row.childCount > 0
+                    ) {
+                        row.getChildAt(0).requestFocus()
+                        return true
+                    }
+                    if (onChips && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        webView?.requestFocus(View.FOCUS_DOWN)
+                        return true
+                    }
+                }
             }
         }
         return super.dispatchKeyEvent(event)

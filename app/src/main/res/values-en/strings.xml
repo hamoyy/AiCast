@@ -39,6 +39,8 @@
     <string name="history_not_restorable">Not restorable</string>
     <string name="history_untitled">Untitled cast</string>
     <string name="history_confirm_delete_title">Delete this history entry?</string>
+    <string name="history_confirm_clear_title">Clear all history?</string>
+    <string name="history_confirm_clear_detail">Deletes all %1$d entries. This cannot be undone.</string>
 
     <!-- Settings: device name -->
     <string name="settings_device_name">Device name</string>

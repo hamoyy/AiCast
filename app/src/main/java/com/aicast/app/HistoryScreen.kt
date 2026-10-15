@@ -74,6 +74,10 @@ fun HistoryScreen(
     val titleSize = (cfg.screenWidthDp / 22f).sp
     // 待删除的那一条：非 null 时弹出确认层
     val pending = remember { mutableStateOf<History.Entry?>(null) }
+    // 清空全部也要二次确认（不可恢复）
+    val pendingClear = remember { mutableStateOf(false) }
+    // 清空后列表变空，页面上只剩关闭按钮可聚焦，主动把焦点交给它，避免电视端"焦点丢失"
+    val closeReq = remember { FocusRequester() }
     // 每行一对焦点请求器：行本身、行内删除按钮。列表变化时重建。
     val reqs = remember(entries) {
         entries.associate { it.id to Pair(FocusRequester(), FocusRequester()) }
@@ -101,11 +105,11 @@ fun HistoryScreen(
                 )
             }
             if (entries.isNotEmpty()) {
-                ClearButton(onClear)
+                ClearButton { pendingClear.value = true }
                 Spacer(Modifier.width(8.dp))
             }
             // 和设置页同一枚圆形关闭按钮：不再靠"右滑/返回键"这种没提示的退出方式
-            CloseButton(onBack)
+            CloseButton(onBack, closeReq)
         }
         Spacer(Modifier.height(16.dp))
 
@@ -138,17 +142,36 @@ fun HistoryScreen(
                 entries.firstOrNull()?.let { reqs[it.id]?.first?.requestFocus() }
             }
         }
+
+        // 列表空了（清空后）：把焦点交给关闭按钮，别让电视端焦点悬空
+        LaunchedEffect(entries.isEmpty()) {
+            if (entries.isEmpty()) closeReq.requestFocus()
+        }
     }
 
-    // 二次确认：删除不可恢复，触摸端弹层、电视端 OK 确认
+    // 二次确认：删除/清空都不可恢复，触摸端弹层、电视端 OK 确认
     pending.value?.let { target ->
-        DeleteConfirmDialog(
-            entry = target,
+        ConfirmDialog(
+            title = stringResource(R.string.history_confirm_delete_title),
+            detail = target.title.ifEmpty { stringResource(R.string.history_untitled) },
+            confirmLabel = stringResource(R.string.action_delete),
             onConfirm = {
                 onDelete(target)
                 pending.value = null
             },
             onDismiss = { pending.value = null }
+        )
+    }
+    if (pendingClear.value) {
+        ConfirmDialog(
+            title = stringResource(R.string.history_confirm_clear_title),
+            detail = stringResource(R.string.history_confirm_clear_detail, entries.size),
+            confirmLabel = stringResource(R.string.action_clear),
+            onConfirm = {
+                onClear()
+                pendingClear.value = false
+            },
+            onDismiss = { pendingClear.value = false }
         )
     }
 }
@@ -181,7 +204,7 @@ private fun ClearButton(onClear: () -> Unit) {
 
 /** 顶部圆形关闭按钮 */
 @Composable
-private fun CloseButton(onBack: () -> Unit) {
+private fun CloseButton(onBack: () -> Unit, focusRequester: FocusRequester? = null) {
     val focused = remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
@@ -193,6 +216,7 @@ private fun CloseButton(onBack: () -> Unit) {
                 if (focused.value) accent else Color.Transparent,
                 CircleShape
             )
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused.value = it.isFocused }
             .clickable { onBack() },
         contentAlignment = Alignment.Center
@@ -300,8 +324,10 @@ private fun DeleteButton(
 }
 
 @Composable
-private fun DeleteConfirmDialog(
-    entry: History.Entry,
+private fun ConfirmDialog(
+    title: String,
+    detail: String,
+    confirmLabel: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -324,12 +350,12 @@ private fun DeleteConfirmDialog(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                stringResource(R.string.history_confirm_delete_title),
+                title,
                 color = hText, fontSize = 17.sp, fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                entry.title.ifEmpty { stringResource(R.string.history_untitled) },
+                detail,
                 color = hDim, fontSize = 13.sp, maxLines = 1
             )
             Spacer(Modifier.height(20.dp))
@@ -341,7 +367,7 @@ private fun DeleteConfirmDialog(
                     onClick = onDismiss
                 )
                 DialogAction(
-                    label = stringResource(R.string.action_delete),
+                    label = confirmLabel,
                     color = hDanger,
                     danger = true,
                     onClick = onConfirm

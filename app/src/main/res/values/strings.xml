@@ -39,6 +39,8 @@
     <string name="history_not_restorable">不可还原</string>
     <string name="history_untitled">未命名投送</string>
     <string name="history_confirm_delete_title">确认删除这条历史？</string>
+    <string name="history_confirm_clear_title">确认清空全部历史？</string>
+    <string name="history_confirm_clear_detail">将删除全部 %1$d 条记录，不可恢复</string>
 
     <!-- 设置：设备名称 -->
     <string name="settings_device_name">设备名称</string>

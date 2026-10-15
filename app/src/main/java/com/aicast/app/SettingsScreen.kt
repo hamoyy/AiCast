@@ -1,6 +1,7 @@
 package com.aicast.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -58,6 +60,8 @@ private val bgDark = Color(0xFF0B0E12)
 private val cardBg = Color(0xFF151A21)
 private val textMain = Color(0xFFE6EAF0)
 private val textDim = Color(0xFF8A939E)
+/** 行聚焦时的底色：比 cardBg 亮一档，电视端坐着看也认得出焦点在哪一行 */
+private val rowFocusBg = Color(0xFF20262F)
 
 /** 设置页（M2，§10）：名称 / 待机主题 / 访问模式（投送 + 密码）/ 本机 */
 @Composable
@@ -209,7 +213,8 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                     msg = if (on) sCastOn else sCastOff
                 }
             )
-            Spacer(Modifier.height(14.dp))
+            // 两行各自带 8dp 纵向内边距，这里少留一点，免得间距显得过松
+            Spacer(Modifier.height(2.dp))
             // ② 密码验证：默认关 = 公开投送；打开才要设密码
             ToggleRow(
                 title = stringResource(R.string.settings_pwd_title),
@@ -374,7 +379,18 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     Spacer(Modifier.height(14.dp))
 }
 
-/** 一行开关：左边标题+说明，右边 Switch（电视端可靠 D-pad 聚焦） */
+/**
+ * 一行开关：**整个「行」是焦点目标**，不是那枚小小的 Switch。
+ *
+ * 电视端坐在几米外，只高亮开关本体等于没有焦点反馈——用户找不到自己选到哪了。
+ * 所以：整行可聚焦，聚焦时整行变亮 + accent 描边（跨满整行宽度）。
+ *
+ * 配套两点，缺一不可：
+ * - `Switch(onCheckedChange = null)` 去掉它自带的 toggleable，否则一行里会出现
+ *   **两个焦点目标**，方向键要按两次、且第一次的反馈仍然只有那枚小开关；
+ * - [focusRequester] 挂在**行**上（以前挂在 Switch 上），设置页里"关掉密码验证后
+ *   把焦点还给这行"的逻辑才继续有效。
+ */
 @Composable
 private fun ToggleRow(
     title: String,
@@ -383,8 +399,23 @@ private fun ToggleRow(
     onToggle: (Boolean) -> Unit,
     focusRequester: FocusRequester? = null
 ) {
+    val focused = remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(10.dp)
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (focused.value) rowFocusBg else Color.Transparent)
+            .border(
+                if (focused.value) 2.dp else 0.dp,
+                if (focused.value) accent else Color.Transparent,
+                shape
+            )
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused.value = it.isFocused }
+            .clickable { onToggle(!checked) }
+            // 与 ThemeRow 同一套内边距：聚焦底色才不会紧贴文字
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -393,9 +424,8 @@ private fun ToggleRow(
         }
         Switch(
             checked = checked,
-            onCheckedChange = onToggle,
-            modifier = if (focusRequester != null) Modifier.focusRequester(focusRequester)
-            else Modifier,
+            // null：不自己处理点击、也不参与焦点，整行统一由上面的 clickable 接管
+            onCheckedChange = null,
             colors = SwitchDefaults.colors(
                 checkedTrackColor = accent,
                 checkedThumbColor = bgDark,

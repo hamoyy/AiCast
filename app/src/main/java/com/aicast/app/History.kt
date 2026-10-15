@@ -25,7 +25,8 @@ object History {
     )
 
     private const val MAX = 10
-    private const val MAX_FULL = 512 * 1024  // 512KB 以上不存全文，防吃满存储
+    private const val MAX_FULL = 2 * 1024 * 1024  // 2MB 以上不存全文，防吃满存储
+                                                  // （服务端单次接收上限是 4MB，见 Server.MAX_BODY_BYTES）
 
     private val file get() = File(App.ctx.filesDir, "history.json")
     private val items = ArrayDeque<Entry>()  // 头 = 最新

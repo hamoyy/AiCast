@@ -3,11 +3,9 @@ package com.aicast.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -32,32 +30,37 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.focusGroup
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 
 private val hText = Color(0xFFE6EAF0)
 private val hDim = Color(0xFF8A939E)
 private val hCard = Color(0xFF151A21)
+private val hCardFocus = Color(0xFF20262F)
 private val hDanger = Color(0xFFFF6B6B)
 
 /**
  * 投送历史列表：选中一条即重播。单行可单向删除（不可恢复，故走二次确认）。
- * 遥控器：方向键在各行/按钮间漫游，OK 触发；首行自动获焦，避免电视端进了历史页却没焦点。
+ *
+ * 电视端关键三点（踩过的坑）：
+ * 1. 焦点必须有视觉反馈——行只 focusable 不加高亮，焦点在但用户看不见，等于不可操作。
+ * 2. 用 clickable 单一修饰符提供"聚焦 + 触摸点击 + OK 激活"，别再叠 focusable()，
+ *    否则同一行出现两个焦点目标，方向键要按两次。
+ * 3. 删除按钮嵌在行卡片内部，Compose 的方向键搜索不会进入父节点边界内的子元素，
+ *    必须用 focusProperties 显式连"行 --右键--> 删除按钮 / 删除按钮 --左键--> 行"。
  */
 @Composable
 fun HistoryScreen(
@@ -70,7 +73,11 @@ fun HistoryScreen(
     val cfg = LocalConfiguration.current
     val titleSize = (cfg.screenWidthDp / 22f).sp
     // 待删除的那一条：非 null 时弹出确认层
-    val pending = remember { androidx.compose.runtime.mutableStateOf<History.Entry?>(null) }
+    val pending = remember { mutableStateOf<History.Entry?>(null) }
+    // 每行一对焦点请求器：行本身、行内删除按钮。列表变化时重建。
+    val reqs = remember(entries) {
+        entries.associate { it.id to Pair(FocusRequester(), FocusRequester()) }
+    }
 
     Column(
         modifier = Modifier
@@ -94,31 +101,11 @@ fun HistoryScreen(
                 )
             }
             if (entries.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(hCard)
-                        .clickable { onClear() }
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                ) { Text(stringResource(R.string.action_clear), color = hDim, fontSize = 13.sp) }
+                ClearButton(onClear)
                 Spacer(Modifier.width(8.dp))
             }
             // 和设置页同一枚圆形关闭按钮：不再靠"右滑/返回键"这种没提示的退出方式
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(hCard, CircleShape)
-                    .clip(CircleShape)
-                    .clickable { onBack() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = stringResource(R.string.cd_close_history),
-                    tint = hText,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            CloseButton(onBack)
         }
         Spacer(Modifier.height(16.dp))
 
@@ -130,26 +117,25 @@ fun HistoryScreen(
                 )
             }
         } else {
-            val firstReq = remember { FocusRequester() }
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .focusGroup(),
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(entries, key = { it.id }) { e ->
+                    val (rowReq, delReq) = reqs.getValue(e.id)
                     HistoryRow(
                         e = e,
                         onReplay = onReplay,
                         onRequestDelete = { pending.value = e },
-                        focusRequester = if (e == entries.first()) firstReq else null
+                        rowRequester = rowReq,
+                        deleteRequester = delReq
                     )
                 }
                 item { Spacer(Modifier.height(30.dp)) }
             }
             // 进入历史页就把焦点交给第一条，电视端方向键立即可用
             LaunchedEffect(entries.firstOrNull()?.id) {
-                if (entries.isNotEmpty()) firstReq.requestFocus()
+                entries.firstOrNull()?.let { reqs[it.id]?.first?.requestFocus() }
             }
         }
     }
@@ -167,30 +153,86 @@ fun HistoryScreen(
     }
 }
 
+/** 顶部「清空」：带焦点高亮，遥控器可聚焦 */
+@Composable
+private fun ClearButton(onClear: () -> Unit) {
+    val focused = remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(if (focused.value) hCardFocus else hCard)
+            .border(
+                if (focused.value) 2.dp else 0.dp,
+                if (focused.value) accent else Color.Transparent,
+                shape
+            )
+            .onFocusChanged { focused.value = it.isFocused }
+            .clickable { onClear() }
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    ) {
+        Text(
+            stringResource(R.string.action_clear),
+            color = if (focused.value) hText else hDim,
+            fontSize = 13.sp
+        )
+    }
+}
+
+/** 顶部圆形关闭按钮 */
+@Composable
+private fun CloseButton(onBack: () -> Unit) {
+    val focused = remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(if (focused.value) hCardFocus else hCard)
+            .border(
+                if (focused.value) 2.dp else 0.dp,
+                if (focused.value) accent else Color.Transparent,
+                CircleShape
+            )
+            .onFocusChanged { focused.value = it.isFocused }
+            .clickable { onBack() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.Default.Close,
+            contentDescription = stringResource(R.string.cd_close_history),
+            tint = hText,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
 @Composable
 private fun HistoryRow(
     e: History.Entry,
     onReplay: (History.Entry) -> Unit,
     onRequestDelete: () -> Unit,
-    focusRequester: FocusRequester? = null
+    rowRequester: FocusRequester,
+    deleteRequester: FocusRequester
 ) {
     val replayable = !e.truncated && e.html != null
+    val focused = remember { mutableStateOf(false) }
+    // clickable 一个修饰符就够：触摸点击 + 电视端聚焦 + OK/DPAD_CENTER 激活全由它提供。
+    // 不可还原的行也保持可聚焦（否则删不掉），只是 OK 不做重播。
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(hCard)
-            .focusable()
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            // 电视端：行聚焦时 OK = 重播（不可重播的行则无操作）
-            .onKeyEvent { ev ->
-                if (ev.action == androidx.compose.ui.input.key.KeyEventAction.Down &&
-                    ev.key == Key.Enter && replayable
-                ) {
-                    onReplay(e); true
-                } else false
-            }
-            .clickable(enabled = replayable) { onReplay(e) }
+            .background(if (focused.value) hCardFocus else hCard)
+            .border(
+                if (focused.value) 2.dp else 0.dp,
+                if (focused.value) accent else Color.Transparent,
+                RoundedCornerShape(14.dp)
+            )
+            .focusRequester(rowRequester)
+            // 行聚焦后按右键 → 行内删除按钮
+            .focusProperties { right = deleteRequester }
+            .onFocusChanged { focused.value = it.isFocused }
+            .clickable { if (replayable) onReplay(e) }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -214,7 +256,7 @@ private fun HistoryRow(
         }
         Spacer(Modifier.width(12.dp))
         // 单向删除按钮：触摸点击 / 电视方向键聚焦后 OK 触发，均走二次确认
-        DeleteButton(onRequestDelete)
+        DeleteButton(onRequestDelete, deleteRequester, rowRequester)
         Spacer(Modifier.width(8.dp))
         Text(
             stringResource(if (replayable) R.string.history_replay else R.string.history_not_restorable),
@@ -225,27 +267,26 @@ private fun HistoryRow(
 }
 
 @Composable
-private fun DeleteButton(onRequestDelete: () -> Unit) {
-    val focused = remember { androidx.compose.runtime.mutableStateOf(false) }
+private fun DeleteButton(
+    onRequestDelete: () -> Unit,
+    deleteRequester: FocusRequester,
+    rowRequester: FocusRequester
+) {
+    val focused = remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(40.dp)
             .clip(CircleShape)
-            .background(if (focused.value) hDanger.copy(alpha = 0.18f) else hCard)
+            .background(if (focused.value) hDanger.copy(alpha = 0.22f) else hCard)
             .border(
-                if (focused.value) 1.5.dp else 0.dp,
+                if (focused.value) 2.dp else 0.dp,
                 if (focused.value) hDanger else Color.Transparent,
                 CircleShape
             )
-            .focusable(true)
+            .focusRequester(deleteRequester)
+            // 删除按钮按左键 → 回到本行
+            .focusProperties { left = rowRequester }
             .onFocusChanged { focused.value = it.isFocused }
-            .onKeyEvent { ev ->
-                if (ev.action == androidx.compose.ui.input.key.KeyEventAction.Down &&
-                    ev.key == Key.Enter
-                ) {
-                    onRequestDelete(); true
-                } else false
-            }
             .clickable { onRequestDelete() },
         contentAlignment = Alignment.Center
     ) {
@@ -253,7 +294,7 @@ private fun DeleteButton(onRequestDelete: () -> Unit) {
             Icons.Default.Delete,
             contentDescription = stringResource(R.string.cd_delete_entry),
             tint = if (focused.value) hDanger else hDim,
-            modifier = Modifier.size(18.dp)
+            modifier = Modifier.size(20.dp)
         )
     }
 }
@@ -264,7 +305,7 @@ private fun DeleteConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val confirmReq = remember { FocusRequester() }
+    val cancelReq = remember { FocusRequester() }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -274,10 +315,11 @@ private fun DeleteConfirmDialog(
     ) {
         Column(
             modifier = Modifier
-                .width(360.dp)
+                .width(400.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(hCard)
-                .clickable(enabled = false) {} // 吞掉背景点击，避免穿透到列表
+                // 吞掉背景点击，避免穿透到列表
+                .clickable(enabled = false) {}
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -292,43 +334,56 @@ private fun DeleteConfirmDialog(
             )
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF202730))
-                        .clickable { onDismiss() }
-                        .focusable()
-                        .focusRequester(confirmReq)
-                        .padding(horizontal = 22.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        stringResource(R.string.action_cancel),
-                        color = hText, fontSize = 14.sp
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(hDanger.copy(alpha = 0.16f))
-                        .border(1.dp, hDanger, RoundedCornerShape(12.dp))
-                        .clickable { onConfirm() }
-                        .focusable()
-                        .onKeyEvent { ev ->
-                            if (ev.action == androidx.compose.ui.input.key.KeyEventAction.Down &&
-                                ev.key == Key.Enter
-                            ) {
-                                onConfirm(); true
-                            } else false
-                        }
-                        .padding(horizontal = 22.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        stringResource(R.string.action_delete),
-                        color = hDanger, fontSize = 14.sp
-                    )
-                }
+                DialogAction(
+                    label = stringResource(R.string.action_cancel),
+                    color = hText,
+                    focusRequester = cancelReq,
+                    onClick = onDismiss
+                )
+                DialogAction(
+                    label = stringResource(R.string.action_delete),
+                    color = hDanger,
+                    danger = true,
+                    onClick = onConfirm
+                )
             }
         }
-        LaunchedEffect(Unit) { confirmReq.requestFocus() }
+        // 默认焦点落在「取消」：误按 OK 不会直接删掉，符合破坏性操作的安全默认
+        LaunchedEffect(Unit) { cancelReq.requestFocus() }
+    }
+}
+
+@Composable
+private fun DialogAction(
+    label: String,
+    color: Color,
+    focusRequester: FocusRequester? = null,
+    danger: Boolean = false,
+    onClick: () -> Unit
+) {
+    val focused = remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(
+                when {
+                    focused.value && danger -> hDanger.copy(alpha = 0.28f)
+                    focused.value -> Color(0xFF2A323D)
+                    danger -> hDanger.copy(alpha = 0.14f)
+                    else -> Color(0xFF202730)
+                }
+            )
+            .border(
+                if (focused.value) 2.dp else 0.dp,
+                if (focused.value) (if (danger) hDanger else accent) else Color.Transparent,
+                shape
+            )
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { focused.value = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 24.dp, vertical = 11.dp)
+    ) {
+        Text(label, color = color, fontSize = 14.sp)
     }
 }

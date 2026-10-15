@@ -27,6 +27,10 @@ jobs:
 
       - name: 装 Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 别用默认的 packages（里面含已被移除的 'tools' 包，会直接失败）；
+          # 其余需要的 platform/build-tools 由 AGP 自动补装，licenses 该动作已接受
+          packages: 'platform-tools'
 
       - name: 缓存 Gradle（第二次起会快很多）
         uses: actions/cache@v4

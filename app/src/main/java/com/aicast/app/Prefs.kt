@@ -64,6 +64,21 @@ object Prefs {
         set(v) = sp.edit().putBoolean("allow_render", v).apply()
 
     /**
+     * 夜间熄屏时段："HH:mm"，两端都为空 = 不启用（见 [ScreenSchedule]）。
+     *
+     * 时段内 app 会**松开「保持屏幕常亮」**，让系统按自己的「屏幕超时」熄屏。
+     * 普通 app 无权直接关屏（goToSleep 要系统签名权限、lockNow 要设备管理员，
+     * 而本项目承诺不碰设备管理员），这是唯一不需要任何额外权限的做法。
+     */
+    var screenOffFrom: String
+        get() = sp.getString("screen_off_from", "") ?: ""
+        set(v) = sp.edit().putString("screen_off_from", v.trim()).apply()
+
+    var screenOffTo: String
+        get() = sp.getString("screen_off_to", "") ?: ""
+        set(v) = sp.edit().putString("screen_off_to", v.trim()).apply()
+
+    /**
      * 逐项权限判定。只剩 `render`（即投送总开关）真正会被关掉，其余一律放行 ——
      * 关键是要**不再读**旧设备里可能存着的 `allow_message=false` 之类，否则门被
      * 永久关死而 UI 上已经没有开关能把它们改回来。

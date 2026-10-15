@@ -73,6 +73,16 @@
     <string name="theme_kind_agent">agent 注册</string>
     <string name="settings_theme_switched">已切换主题：%1$s</string>
 
+    <!-- 设置：夜间熄屏 -->
+    <string name="settings_screen">夜间熄屏</string>
+    <string name="settings_screen_desc">到点后 app 不再让屏幕常亮，交给系统按「屏幕超时」自动熄屏</string>
+    <string name="settings_screen_from">开始 如 22:30</string>
+    <string name="settings_screen_to">结束 如 07:00</string>
+    <string name="settings_screen_note">两端留空 = 不启用。想让它真的黑掉，请把系统的「屏幕超时」设成 15~30 秒（普通 app 无权直接强制关屏）</string>
+    <string name="settings_screen_saved">夜间熄屏时段已保存</string>
+    <string name="settings_screen_off">已关闭夜间熄屏</string>
+    <string name="settings_screen_bad">时间格式不对：请填 24 小时制 HH:mm（如 22:30），或两端都留空</string>
+
     <!-- 设置：已授权设备 -->
     <string name="settings_tokens">已授权的设备（token 30 天有效）</string>
     <string name="settings_token_current">当前</string>

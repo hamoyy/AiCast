@@ -66,6 +66,8 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
     var mode by remember { mutableStateOf(Prefs.mode) }
     var theme by remember { mutableStateOf(Prefs.theme) }
     var cast by remember { mutableStateOf(Prefs.castEnabled) }
+    var screenFrom by remember { mutableStateOf(Prefs.screenOffFrom) }
+    var screenTo by remember { mutableStateOf(Prefs.screenOffTo) }
     var pwdOn by remember { mutableStateOf(Prefs.mode == "auth") }
     var pwd by remember { mutableStateOf("") }
     var pwdErr by remember { mutableStateOf<String?>(null) }
@@ -89,6 +91,21 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
     val sPwdTooShort = stringResource(R.string.settings_pwd_short)
     val sPwdSaved = stringResource(R.string.settings_pwd_saved)
     val sTokenRevoked = stringResource(R.string.settings_token_revoked)
+    val sScreenSaved = stringResource(R.string.settings_screen_saved)
+    val sScreenOff = stringResource(R.string.settings_screen_off)
+    val sScreenBad = stringResource(R.string.settings_screen_bad)
+
+    /** 夜间熄屏时段：本地校验后落库。两端都空 = 不启用（见 [ScreenSchedule]） */
+    fun saveScreenWindow(from: String, to: String) {
+        if (ScreenSchedule.isValid(from, to)) {
+            Prefs.screenOffFrom = from
+            Prefs.screenOffTo = to
+            onChanged()
+            msg = if (from.isBlank() && to.isBlank()) sScreenOff else sScreenSaved
+        } else {
+            msg = sScreenBad
+        }
+    }
 
     // 离开设置页就把软键盘收掉：否则窗口会一直停在"给键盘留了位置"的缩小状态，
     // 回到待机页下半屏是黑的（实测 mIsInputViewShown 一直是 true，回主界面也一样）
@@ -311,6 +328,43 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                     }
                 )
             }
+        }
+
+        // 夜间熄屏：不需要任何特殊权限——app 松开「保持屏幕常亮」，交给系统自己的
+        // 「屏幕超时」熄屏（普通 app 无权直接强制关屏，见 README「夜间熄屏」一节）
+        Section(stringResource(R.string.settings_screen)) {
+            Text(
+                stringResource(R.string.settings_screen_desc),
+                color = textDim, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EditRow(
+                    value = screenFrom,
+                    placeholder = stringResource(R.string.settings_screen_from),
+                    onChange = { screenFrom = it },
+                    onDone = { saveScreenWindow(screenFrom, screenTo) },
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "→",
+                    color = textDim,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                EditRow(
+                    value = screenTo,
+                    placeholder = stringResource(R.string.settings_screen_to),
+                    onChange = { screenTo = it },
+                    onDone = { saveScreenWindow(screenFrom, screenTo) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.settings_screen_note),
+                color = textDim, fontSize = 12.sp
+            )
         }
 
         if (mode == "auth" && Prefs.hasPassword()) {

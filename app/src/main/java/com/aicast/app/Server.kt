@@ -359,9 +359,8 @@ private fun mount(rt: Routing) = with(rt) {
                 err("no_space", Str.get(R.string.media_no_space))
             )
         val name = call.request.queryParameters["name"] ?: "media.mp3"
-        val ct = call.request.contentType()
-        val type = if (ct.contentType == "*" || ct.contentSubtype == "*")
-            "application/octet-stream" else ct.toString()
+        // 类型白名单化：media 是"用户上传的字节"，不能被当成可信的 Content-Type 存起来
+        val type = safeMediaType(call.request.contentType().toString())
         val tmp = File(App.ctx.cacheDir, "media_up_${System.nanoTime()}")
         try {
             // 流式落盘不进内存；超限由 Content-Length 预检 + Media.commit 复核兜底
@@ -449,11 +448,16 @@ private fun mount(rt: Routing) = with(rt) {
             ?: return@get call.respond(
                 HttpStatusCode.NotFound, err("gone", Str.get(R.string.media_gone))
             )
+        // 媒体是"用户上传的字节"，类型不可信：只认音视频/图片，其余一律 octet-stream。
+        // 以前原样回吐客户端给的 Content-Type（例如 text/html）→ 设备端口变成可托管任意 HTML 的站点。
         val ctype = try {
-            ContentType.parse(meta.type)
+            ContentType.parse(safeMediaType(meta.type))
         } catch (e: Exception) {
             ContentType.Application.OctetStream
         }
+        // 即便落到浏览器里也不许当网页渲染，也不许 MIME 嗅探
+        call.response.header("X-Content-Type-Options", "nosniff")
+        call.response.header(HttpHeaders.ContentDisposition, contentDispositionOf(meta.name))
         val total = f.length()
         call.response.header(HttpHeaders.AcceptRanges, "bytes")
         val rm = call.request.headers[HttpHeaders.Range]?.let { Regex("bytes=(\\d*)-(\\d*)").find(it) }
@@ -517,11 +521,16 @@ private fun mount(rt: Routing) = with(rt) {
             return@post call.respond(
                 HttpStatusCode.Forbidden, err("permission_denied", Str.get(R.string.err_perm_denied_param))
             )
-        val obj = try { parseObj(call.receiveLimited() ?: "") }
+        // 与其它写端点保持一致：body 超限回 413，而不是被 `?: ""` 吞成 400 bad_json_object
+        val body = try { call.receiveLimited() }
         catch (e: BadBody) {
             return@post call.respond(HttpStatusCode.BadRequest, err("bad_encoding", e.message ?: ""))
         }
-            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json", Str.get(R.string.err_bad_json_object)))
+            ?: return@post call.respond(
+                HttpStatusCode.PayloadTooLarge, err("payload_too_large", Str.get(R.string.err_payload_too_large))
+            )
+        val obj = parseObj(body)
+            ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_json_object", Str.get(R.string.err_bad_json_object)))
         val k = obj.str("key")
             ?: return@post call.respond(HttpStatusCode.BadRequest, err("bad_request", Str.get(R.string.err_need_key)))
         val v = obj.str("value")
@@ -576,6 +585,21 @@ private fun mount(rt: Routing) = with(rt) {
 }
 
 // ---------------- helpers ----------------
+
+/** 媒体类型白名单：只留音视频/图片，避免上传 text/html 后在设备端口上渲染任意页面 */
+private fun safeMediaType(raw: String): String {
+    val t = raw.substringBefore(';').trim().lowercase()
+    return if (t.startsWith("audio/") || t.startsWith("image/") || t.startsWith("video/")) t
+    else "application/octet-stream"
+}
+
+/** 媒体下载一律当附件下发：即便被浏览器打开也只触发下载，不渲染 */
+private fun contentDispositionOf(name: String): String {
+    val fn = name.ifBlank { "media" }
+    val ascii = fn.map { if (it.code in 32..126 && it != '"' && it != '\\') it else '_' }.joinToString("")
+    val encoded = java.net.URLEncoder.encode(fn, "UTF-8").replace("+", "%20")
+    return "attachment; filename=\"$ascii\"; filename*=UTF-8''$encoded"
+}
 
 /**
  * 投送总开关关着时给 agent 的统一说法（/info.acceptingHint 用的是同一句）。

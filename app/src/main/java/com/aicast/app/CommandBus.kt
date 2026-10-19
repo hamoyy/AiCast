@@ -83,8 +83,10 @@ object CommandBus {
         val full = embedSdk(html, KIND_CONTENT)
         // baseURL 不能为 null：opaque origin 下页面访问 localStorage 会抛 SecurityError
         main.post {
+            val wv = App.webView ?: return@post
             if (wake) App.activity?.let { Ui.wake(it) }
-            App.webView?.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null)
+            attachBridge(wv)   // 内联内容受信任：把桥挂回来（url 投送会摘掉）
+            wv.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null)
         }
         return true
     }
@@ -99,6 +101,7 @@ object CommandBus {
             pendingHtml = null; pendingWake = false
             lastHtml = html; currentUrl = null; contentRendering = true
             if (wake) App.activity?.let { Ui.wake(it) }
+            attachBridge(wv)
             wv.loadDataWithBaseURL("https://aicast.local/", embedSdk(html, KIND_CONTENT), "text/html", "UTF-8", null)
         }
     }
@@ -116,7 +119,11 @@ object CommandBus {
         contentRendering = false
         val full = embedSdk(html, KIND_THEME) +
             "<style>html,body{overflow:hidden!important}</style>"
-        main.post { App.webView?.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null) }
+        main.post {
+            val wv = App.webView ?: return@post
+            attachBridge(wv)
+            wv.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null)
+        }
     }
 
     /**
@@ -170,10 +177,15 @@ object CommandBus {
     /** 无可用（可见）WebView 返回 false（调用方应回明确错误，不要让 agent 以为生效了） */
     fun loadUrl(url: String, wake: Boolean): Boolean {
         if (App.webView == null || !App.foreground) return false
-        if (wake) main.post { App.activity?.let { Ui.wake(it) } }
         currentUrl = url; lastHtml = null; pendingHtml = null
         pendingWake = false; contentRendering = true
-        main.post { App.webView?.loadUrl(url) }
+        main.post {
+            val wv = App.webView ?: return@post
+            if (wake) App.activity?.let { Ui.wake(it) }
+            // 第三方页面是**不可信来源**：先把 JS 桥摘掉再加载，否则它能调 getInfo() 读走设备画像
+            detachBridge(wv)
+            wv.loadUrl(url)
+        }
         return true
     }
 
@@ -215,15 +227,66 @@ object CommandBus {
     private val lock = Any()
     private val events = kotlin.collections.ArrayDeque<Ev>()
 
-    /** seq 落盘：进程重启也不回退，agent 的 since 不会被"回到 0"卡死（P0-2） */
+    // ---------- 序列号（单调、并发安全） ----------
+
+    /**
+     * 事件序号：**进程内 AtomicLong 是唯一真源**，SharedPreferences 只用于重启后接续。
+     *
+     * 以前是 sp 的读-改-写（`getLong()+1` 再 `putLong`），而 emit 会从三类线程同时进来
+     * （Ktor 请求线程、主线程 onPageFinished、WebView 的 JavaBridge 线程）。两条事件撞到同一个
+     * seq 时，客户端把 `since` 推到该值后另一条**永远不会再返回**——静默丢事件，且看不出来。
+     */
+    private val seq = java.util.concurrent.atomic.AtomicLong(0L)
+    @Volatile private var seqLoaded = false
+    private val seqLock = Any()
+
+    /** 落盘去抖：合并成"写此刻最新值"，突发时最多一次在途 + 一次排队 */
+    private val seqWriter = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "aicast-seq").apply { isDaemon = true }
+    }
+    private val seqPersistPending = java.util.concurrent.atomic.AtomicBoolean(false)
+
     private fun seqSp() = App.ctx.getSharedPreferences("aicast_events", Context.MODE_PRIVATE)
 
+    private fun ensureSeqLoaded() {
+        if (seqLoaded) return
+        synchronized(seqLock) {
+            if (seqLoaded) return
+            seq.set(seqSp().getLong("seq", 0L))
+            seqLoaded = true
+        }
+    }
+
     private fun nextSeq(): Long {
-        val sp = seqSp()
-        val s = sp.getLong("seq", 0L) + 1
-        sp.edit().putLong("seq", s).apply()
+        ensureSeqLoaded()
+        val s = seq.incrementAndGet()
+        scheduleSeqPersist()
         return s
     }
+
+    private fun scheduleSeqPersist() {
+        if (!seqPersistPending.compareAndSet(false, true)) return
+        seqWriter.execute {
+            seqPersistPending.set(false)
+            try {
+                // 写"此刻的最新值"：这期间跳过的一批序号一并落盘
+                seqSp().edit().putLong("seq", seq.get()).apply()
+            } catch (e: Exception) { /* 落盘失败不影响本次会话；重启后靠 reset 语义恢复 */ }
+        }
+    }
+
+    /**
+     * 页面 SDK 与 app 之间的桥。**只挂在内联内容/主题页上**：
+     * `--url` 投送的是任意第三方页面，挂上就意味着它能把 deviceId/型号/端口等画像读走。
+     */
+    const val BRIDGE_NAME = "AndroidAiCast"
+    private val bridge = JsBridge()
+
+    fun attachBridge(wv: android.webkit.WebView) =
+        wv.addJavascriptInterface(bridge, BRIDGE_NAME)
+
+    fun detachBridge(wv: android.webkit.WebView) =
+        wv.removeJavascriptInterface(BRIDGE_NAME)
 
     /** app 内部事件（可信来源）：system.* / auth.* / media.* / render.* … */
     fun emit(kind: String, data: String) {
@@ -274,7 +337,10 @@ object CommandBus {
     /** 序列化生成，kind/data 均经过转义——不再手写字符串拼接（P0-5） */
     fun eventsJson(since: Long): JsonArray = JsonArray(eventsSince(since).map { evJson(it) })
 
-    fun lastSeq(): Long = seqSp().getLong("seq", 0L)
+    fun lastSeq(): Long {
+        ensureSeqLoaded()
+        return seq.get()
+    }
 
     // long-poll 唤醒器：有事件立刻返回，不再 500ms 轮询
     private val signal = java.util.concurrent.atomic.AtomicInteger(0)

@@ -57,8 +57,15 @@ object Themes {
         } catch (e: Exception) {
             emptyList()
         }
-        agentCache = list
-        return list
+        // 老版本允许用内置 id（native/aurora/minimal-light）注册，会留下读不到、也删不掉的重复条目：
+        // 这里把它们滤掉，顺手删掉那个孤儿文件（registry 里的残留不影响使用，每次加载都会过滤）
+        val cleaned = list.filter { it.id != NATIVE && !builtinAssetPath.containsKey(it.id) }
+        if (cleaned.size != list.size) {
+            list.filter { it.id == NATIVE || builtinAssetPath.containsKey(it.id) }
+                .forEach { runCatching { File(themeDir, "${it.id}.html").delete() } }
+        }
+        agentCache = cleaned
+        return cleaned
     }
 
     /** 内置主题。每次现算：显示名要跟着当前语言，缓存会把切语言后的名字钉死 */
@@ -102,8 +109,18 @@ object Themes {
      */
     fun register(html: String, name: String?, id: String?): ThemeMeta {
         require(html.isNotBlank()) { Str.get(R.string.theme_err_empty) }
-        val tid = (id?.takeIf { it.matches(Regex("[A-Za-z0-9_\\-]{1,40}")) })
-            ?: ("t_" + UUID.randomUUID().toString().take(8))
+        // 显式传了 id 就必须合规：以前不合规会静默换成 t_xxxx，调用方拿到的和自己请求的不是一个东西
+        val explicit = id?.trim()?.ifEmpty { null }
+        if (explicit != null) {
+            require(explicit.matches(Regex("[A-Za-z0-9_\\-]{1,40}"))) {
+                Str.get(R.string.theme_err_bad_id)
+            }
+            // 撞内置 id 会写出一份永远读不到、也删不掉的孤儿条目（htmlFor 永远先命中内置版）
+            require(explicit != NATIVE && !builtinAssetPath.containsKey(explicit)) {
+                Str.get(R.string.theme_err_builtin, explicit)
+            }
+        }
+        val tid = explicit ?: ("t_" + UUID.randomUUID().toString().take(8))
         val title = (name?.trim()?.takeIf { it.isNotEmpty() })
             ?: extractTitle(html)
         File(themeDir, "$tid.html").writeText(html)

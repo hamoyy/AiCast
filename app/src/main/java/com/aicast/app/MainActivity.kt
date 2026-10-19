@@ -323,7 +323,8 @@ class MainActivity : ComponentActivity() {
             settings.textZoom = Params.currentZoomPercent()
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
-            addJavascriptInterface(JsBridge(), "AndroidAiCast")
+            // 桥默认挂上（首页主题要用）；url 投送前由 CommandBus.loadUrl 摘掉
+            CommandBus.attachBridge(this)
             webChromeClient = object : android.webkit.WebChromeClient() {
                 // 没有 WebChromeClient 时 agent 页面里的 console/alert 全静默丢失，排障全靠猜
                 override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {

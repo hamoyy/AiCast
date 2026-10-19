@@ -94,6 +94,8 @@
     <string name="theme_custom">Custom</string>
     <string name="theme_custom_title">Custom theme</string>
     <string name="theme_err_empty">html must not be empty</string>
+    <string name="theme_err_bad_id">Theme id must be 1-40 chars of letters, digits, underscore or hyphen</string>
+    <string name="theme_err_builtin">"%1$s" is a built-in theme id; pick another one (built-ins cannot be replaced or removed)</string>
 
     <!-- Permission names (shown for /info.open) -->
     <string name="perm_render">Casting</string>

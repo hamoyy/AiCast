@@ -238,7 +238,7 @@ private fun HistoryRow(
     rowRequester: FocusRequester,
     deleteRequester: FocusRequester
 ) {
-    val replayable = !e.truncated && e.html != null
+    val replayable = e.url != null || (!e.truncated && e.html != null)
     val focused = remember { mutableStateOf(false) }
     // clickable 一个修饰符就够：触摸点击 + 电视端聚焦 + OK/DPAD_CENTER 激活全由它提供。
     // 不可还原的行也保持可聚焦（否则删不掉），只是 OK 不做重播。
@@ -272,7 +272,8 @@ private fun HistoryRow(
                 if (e.via.contains('.') || e.via.contains(':')) e.via
                 else stringResource(R.string.history_via_lan)
             val sizeLabel =
-                if (e.size < 1024) stringResource(R.string.history_size_b, e.size)
+                if (e.url != null) stringResource(R.string.history_kind_url)
+                else if (e.size < 1024) stringResource(R.string.history_size_b, e.size)
                 else stringResource(R.string.history_size_kb, e.size / 1024f)
             val meta = "${History.formatTime(e.ts)}  ·  $viaLabel  ·  $sizeLabel" +
                 if (e.truncated) "  ·  " + stringResource(R.string.history_truncated) else ""

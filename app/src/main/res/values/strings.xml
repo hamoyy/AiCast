@@ -94,6 +94,8 @@
     <string name="theme_custom">自定义</string>
     <string name="theme_custom_title">自定义主题</string>
     <string name="theme_err_empty">html 不能为空</string>
+    <string name="err_bad_host">只接受用本机地址访问（Host 校验未通过，可能是 DNS rebinding）</string>
+    <string name="history_kind_url">链接</string>
     <string name="theme_err_bad_id">主题 id 只能是 1–40 位字母、数字、下划线或短横线</string>
     <string name="theme_err_builtin">id「%1$s」是内置主题，换个名字（内置主题不可被覆盖或删除）</string>
 

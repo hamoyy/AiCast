@@ -200,7 +200,7 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 | `list` | 已保存设备（含 authed 状态） |
 | `auth <dev> --password-stdin` | 换 token 并持久化（30 天，多 token 并存）；口令走管道，或设 `AICAST_PASSWORD` |
 | `info <dev>` | 完整画像 JSON（含 internet 实测状态） |
-| `render <dev> --html-file f \| --html '<h>' \| --url u \| --clear [--wake]` | 投送/加载 URL/回待机；wake=亮屏投 |
+| `render <dev> --html-file f \| --html '<h>' \| --url u \| --clear [--wake]` | 投送/加载 URL/回待机；wake=亮屏投。**url 投送也进历史**（只记地址，重播＝重新加载） |
 | `message <dev> --data '<json>' \| --data-file f` | 给页面发增量数据（透传给 `AiCast.onMessage`） |
 | `events <dev> [--since N] [--timeout s] [--follow]` | 取回传事件（见上一节） |
 | `state <dev>` | 当前渲染状态（hasContent/url/screenOn/theme/**pending**/**foreground**） |
@@ -237,6 +237,8 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 - 写操作必须带 **`Content-Type: application/json`**，否则 **415**；`POST /media` 是 raw body 例外，
   但必须自带 `Content-Length`。
 - 带 `Origin` 头的跨站请求直接 **403**（反 CSRF）：只能从本机/agent 侧直连。
+- **Host 必须是设备自己的地址**：只接受 `localhost`/回环或本机任一网卡 IP；用域名访问一律
+  **403 `bad_host`**（防 DNS rebinding）。别给设备配个域名再用浏览器/脚本打开它。
 - 未开放的能力返回 **403 `permission_denied`**，看 `/info` 的 `capabilities` 与 `open` 再动手。
 - `/history`、`/state`、`/events` 等在 auth 模式下都需要 token，别假设它有公网般的匿名读。
 

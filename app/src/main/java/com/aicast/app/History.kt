@@ -21,7 +21,8 @@ object History {
         val via: String,
         val size: Int,
         val truncated: Boolean,
-        val html: String?  // truncated 时为预览片段，否则为完整 HTML
+        val html: String?,  // truncated 时为预览片段，否则为完整 HTML
+        val url: String? = null  // url 投送的地址；与 html 二选一（url 模式不缓存页面内容）
     )
 
     private const val MAX = 10
@@ -49,7 +50,8 @@ object History {
                                 via = o.optString("via"),
                                 size = o.optInt("size"),
                                 truncated = o.optBoolean("truncated"),
-                                html = if (o.isNull("html")) null else o.optString("html")
+                                html = if (o.isNull("html")) null else o.optString("html"),
+                                url = o.optString("url", "").ifEmpty { null }
                             )
                         )
                     }
@@ -82,6 +84,33 @@ object History {
 
     fun get(id: String): Entry? = list().firstOrNull { it.id == id }
 
+    /**
+     * URL 投送：只记地址，不缓存页面内容（第三方资源随时会变，缓存一份反而是假象）。
+     * 以前 url 投送一条历史都不留，用户说「没看到」时既不能重播也查不到投过什么。
+     */
+    fun addUrl(url: String, via: String) {
+        ensure()
+        val e = Entry(
+            id = "h_" + UUID.randomUUID().toString().take(8),
+            ts = System.currentTimeMillis(),
+            title = prettyUrl(url),
+            via = via,
+            size = 0,
+            truncated = false,
+            html = null,
+            url = url
+        )
+        synchronized(this) {
+            items.addFirst(e)
+            while (items.size > MAX) items.removeLast()
+            persist()
+        }
+    }
+
+    /** 列表标题：去掉协议和末尾斜杠，太长的截断 */
+    private fun prettyUrl(url: String): String =
+        url.substringAfter("://", url).trimEnd('/').take(40).ifEmpty { Str.get(R.string.history_untitled) }
+
     fun clear() {
         synchronized(this) { items.clear(); persist() }
     }
@@ -101,6 +130,7 @@ object History {
                 JSONObject()
                     .put("id", it.id).put("ts", it.ts).put("title", it.title)
                     .put("via", it.via).put("size", it.size).put("truncated", it.truncated)
+                    .put("url", it.url ?: JSONObject.NULL)
             )
         }
         return arr.toString()
@@ -131,6 +161,7 @@ object History {
                     .put("id", it.id).put("ts", it.ts).put("title", it.title)
                     .put("via", it.via).put("size", it.size).put("truncated", it.truncated)
                     .put("html", it.html ?: JSONObject.NULL)
+                    .put("url", it.url ?: JSONObject.NULL)
             )
         }
         return arr.toString()

@@ -112,6 +112,17 @@ object Server {
 
 /** 返回 true = 放行；false = 已自行响应，调用方需 finish() */
 private suspend fun guard(call: ApplicationCall): Boolean {
+    // ⓪ Host 必须是本机地址：堵 DNS rebinding
+    //    反 CSRF 的 Origin 判断里有 `origin == "http://$host"` 这一条，而 rebinding 恰好让
+    //    攻击者的 Origin 与 Host 相同（都是他的域名），那条规则会放行 —— 必须先把 Host 钉死在本机。
+    val host = call.request.host()
+    if (!hostAllowed(host)) {
+        call.respond(
+            HttpStatusCode.Forbidden,
+            err("bad_host", Str.get(R.string.err_bad_host))
+        )
+        return false
+    }
     // ① 跨站拦截：浏览器发起的跨源请求一定带 Origin（P1-12）
     val origin = call.request.headers[HttpHeaders.Origin]
     if (origin != null && !allowedOrigin(origin, call.request.host())) {
@@ -164,6 +175,36 @@ private fun allowedOrigin(origin: String, host: String): Boolean =
     origin.equals("https://aicast.local", ignoreCase = true) ||
         origin.equals("http://aicast.local", ignoreCase = true) ||
         origin.equals("http://$host", ignoreCase = true)
+
+/**
+ * Host 白名单：`localhost` / 回环，或**本机任一网卡的地址**。
+ *
+ * 只接受字面地址、不接受域名 —— 域名恰恰是 DNS rebinding 唯一能控的东西。
+ * 地址表缓存 10 秒（/events 长轮询期间每请求都查一次网卡没必要）。
+ */
+private fun hostAllowed(host: String): Boolean {
+    if (host.isBlank()) return false
+    val h = host.removePrefix("[").removeSuffix("]").substringBefore('%').lowercase()
+    if (h == "localhost" || h == "127.0.0.1" || h == "::1") return true
+    return localAddresses().any { it.equals(h, ignoreCase = true) }
+}
+
+@Volatile private var addrCache: Pair<Long, Set<String>> = 0L to emptySet()
+
+private fun localAddresses(): Set<String> {
+    val (at, cached) = addrCache
+    if (cached.isNotEmpty() && System.currentTimeMillis() - at < 10_000) return cached
+    val s = try {
+        java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+            .filter { it.isUp }
+            .flatMap { java.util.Collections.list(it.inetAddresses) }
+            .mapNotNull { it.hostAddress?.substringBefore('%') }
+            .filter { it.isNotEmpty() }
+            .toSet()
+    } catch (e: Exception) { emptySet() }
+    addrCache = System.currentTimeMillis() to s
+    return s
+}
 
 private fun corsHeaders(call: ApplicationCall, origin: String?) {
     // GET /media/{id} 回填需要被页面 fetch/XHR 直接读到；其余不开放跨域
@@ -242,6 +283,8 @@ private fun mount(rt: Routing) = with(rt) {
         val html = obj.str("html")
         val url = obj.str("url")
         val via = call.request.local.remoteHost
+            .trimStart('/')
+            .takeIf { it.isNotEmpty() && (it.contains('.') || it.contains(':')) } ?: ""
         when {
             html != null -> {
                 // P0-4：界面不在前台时**不再假装成功**，内容排队等界面起来再投
@@ -273,6 +316,8 @@ private fun mount(rt: Routing) = with(rt) {
                         HttpStatusCode.Conflict,
                         err("no_display", Str.get(R.string.err_no_display_url))
                     )
+                // url 投送以前一条历史都不留：用户说「没看到」时既不能重播也查不到投过什么
+                History.addUrl(url, via)
                 call.respond(ok("render"))
             }
             else -> { CommandBus.clear(); call.respond(ok("idle")) } // 空内容 = 回待机

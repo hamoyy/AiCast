@@ -83,7 +83,10 @@ class MainActivity : ComponentActivity() {
                             HistoryScreen(
                                 entries = History.list(),
                                 onReplay = { e ->
-                                    e.html?.let { CommandBus.renderHtml(it) }
+                                    // url 类历史重播 = 重新加载那个地址（页面是第三方资源，不缓存内容）
+                                    val u = e.url
+                                    if (u != null) CommandBus.loadUrl(u, false)
+                                    else e.html?.let { CommandBus.renderHtml(it) }
                                     showHistory.value = false
                                 },
                                 onDelete = { History.remove(it.id); historyVersion.value++ },

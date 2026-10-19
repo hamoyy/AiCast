@@ -245,7 +245,8 @@ private fun mount(rt: Routing) = with(rt) {
         when {
             html != null -> {
                 // P0-4：界面不在前台时**不再假装成功**，内容排队等界面起来再投
-                val delivered = CommandBus.renderHtml(html)
+                // `--wake` 对 HTML 投送同样生效：电视熄屏时投送，内容要能把屏幕叫亮
+                val delivered = CommandBus.renderHtml(html, obj.bool("wake"))
                 History.add(html, via)
                 if (delivered) call.respond(ok("render"))
                 else call.respond(

@@ -139,7 +139,9 @@ object DeviceInfo {
                 "app" to JsonObject(
                     mapOf(
                         "version" to JsonPrimitive(appVersion()),
-                        "port" to JsonPrimitive(Server.port)
+                        "port" to JsonPrimitive(Server.port),
+                        // 界面是否真的可见：false 时 /render 一律 202 排队，内容不会"投上去看不见"
+                        "foreground" to JsonPrimitive(App.foreground)
                     )
                 )
             )

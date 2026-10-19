@@ -155,16 +155,22 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    /** 四层互斥：投送内容(WebView) / 待机主题 / 设置页 / 历史页；WebView 为内容视图层，最上 */
+    /**
+     * 四层互斥：投送内容(WebView) / 待机主题 / 设置页 / 历史页；WebView 为内容视图层，最上
+     *
+     * `contentRendering`：内容已下发给 WebView、onPageFinished 还没到。这段窗口里
+     * `hasContent` 仍是 false，若照常走分支就会把待机主题 load 到内容之后，屏幕被主题占掉。
+     */
     private fun syncLayers() {
         val overlay = showSettings.value || showHistory.value
         val htmlHome = Themes.isHtml(Prefs.theme)
-        val show = !overlay && (hasContent.value || htmlHome)
+        val contentShowing = hasContent.value || CommandBus.isContentRendering()
+        val show = !overlay && (contentShowing || htmlHome)
         webView?.visibility = if (show) View.VISIBLE else View.GONE
         homeControls?.visibility =
-            if (htmlHome && !hasContent.value && !overlay) View.VISIBLE else View.GONE
+            if (htmlHome && !contentShowing && !overlay) View.VISIBLE else View.GONE
         if (show) {
-            if (hasContent.value) {
+            if (contentShowing) {
                 // 投送内容已由 renderHtml/loadUrl 载入，直接聚焦收键；主题需下次重载
                 homeLoadedTheme = null
                 webView?.requestFocus(View.FOCUS_DOWN)
@@ -313,7 +319,8 @@ class MainActivity : ComponentActivity() {
             settings.setSupportZoom(false)
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
-            settings.textZoom = 100
+            // 字号倍率是真实能力：/param fontScale 改的是它（以前写死 100，agent 调了没反应）
+            settings.textZoom = Params.currentZoomPercent()
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             addJavascriptInterface(JsBridge(), "AndroidAiCast")
@@ -331,11 +338,27 @@ class MainActivity : ComponentActivity() {
                 override fun onPageFinished(view: WebView, url: String?) {
                     if (url == "about:blank") return  // 清屏，不算一次页面事件
                     injectSdk(view)
-                    val isContent = CommandBus.hasContent()
-                    if (isContent) { hasContent.value = true; syncLayers() }
                     view.requestFocus(View.FOCUS_DOWN)
-                    // 主题重载不再刷 system.page 事件；只有真实投送才记
-                    if (isContent) CommandBus.emit("system.page", """{"url":${JSONObject.quote(url ?: "")}}""")
+                    // 这次加载是"投送内容"还是"待机主题"，由页面自己带来的标记决定。
+                    // 不能拿全局 CommandBus.hasContent() 猜：主题页晚于内容页完成时会把状态判反
+                    // （/state 报 hasContent=true，屏幕上是时钟）。url 投送的第三方页没标记 → 按内容算。
+                    view.evaluateJavascript("window.__AICAST_KIND||''") { raw ->
+                        if (raw?.trim('"') != CommandBus.KIND_THEME) {
+                            CommandBus.markContentLoaded()
+                            hasContent.value = true
+                            syncLayers()
+                            CommandBus.emit(
+                                "system.page",
+                                """{"url":${JSONObject.quote(url ?: "")}}"""
+                            )
+                        } else {
+                            // 主题页：不碰 contentRendering —— 若同时有一次内容加载在途，
+                            // 要等内容页自己的 onPageFinished 来收尾（否则主题会把内容盖掉）。
+                            // 主题重载不刷 system.page，只有真实投送才记。
+                            if (!CommandBus.hasContent()) hasContent.value = false
+                            syncLayers()
+                        }
+                    }
                 }
 
                 // 以前 URL 投送失败屏幕一片空白、agent 毫不知情：现在发 page.error 事件
@@ -344,6 +367,7 @@ class MainActivity : ComponentActivity() {
                     error: android.webkit.WebResourceError
                 ) {
                     if (!request.isForMainFrame) return
+                    CommandBus.markLoadFailed()
                     CommandBus.emit(
                         "page.error",
                         JSONObject()
@@ -363,6 +387,7 @@ class MainActivity : ComponentActivity() {
                     errorResponse: android.webkit.WebResourceResponse
                 ) {
                     if (!request.isForMainFrame) return
+                    CommandBus.markLoadFailed()
                     CommandBus.emit(
                         "page.error",
                         JSONObject()
@@ -405,8 +430,24 @@ class MainActivity : ComponentActivity() {
         applyImmersive()
     }
 
+    /**
+     * 可见性必须单独记：退到桌面时 Activity 不销毁、WebView 还在，往里面投内容
+     * 用户是看不见的。`/render` 靠它决定回 200 还是 202（见 CommandBus.renderHtml）。
+     */
+    override fun onStart() {
+        super.onStart()
+        App.foreground = true
+        CommandBus.flushPending()   // 后台期间排队的投送，回到前台立刻补上
+    }
+
+    override fun onStop() {
+        App.foreground = false
+        super.onStop()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        App.foreground = false
         if (HomeRefresh.request != null) HomeRefresh.request = null
         if (App.activity === this) App.activity = null
         App.webView = null

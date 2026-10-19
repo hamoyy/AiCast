@@ -1,6 +1,6 @@
 ---
 name: aicast
-version: 1.0.1
+version: 1.0.2
 agent_created: true
 description: 局域网内向装了 AiCast app 的安卓设备投送 HTML 页面，并按设备画像（触摸/遥控/电视）决定内容形态、读交互回传。当用户要"给手机或电视投一页内容/把闲置安卓屏当 AI 的显示面板/投待办、简报、仪表盘、音频页"时使用。不是系统投屏：视频镜像、屏幕镜像、Miracast、AirPlay、DLNA 都不归它管。
 ---
@@ -203,7 +203,7 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 | `render <dev> --html-file f \| --html '<h>' \| --url u \| --clear [--wake]` | 投送/加载 URL/回待机；wake=亮屏投 |
 | `message <dev> --data '<json>' \| --data-file f` | 给页面发增量数据（透传给 `AiCast.onMessage`） |
 | `events <dev> [--since N] [--timeout s] [--follow]` | 取回传事件（见上一节） |
-| `state <dev>` | 当前渲染状态（hasContent/url/screenOn/theme/**pending**） |
+| `state <dev>` | 当前渲染状态（hasContent/url/screenOn/theme/**pending**/**foreground**） |
 | `param <dev> [key] [value]` | 读/设 **brightness / theme / fontScale / volume**（四选一） |
 | `themes <dev>` / `theme <dev> <id>` | 列出主题 / 激活待机主题 |
 | `theme <dev> --register (--html-file f \| --html '<h>') [--name N] [--id ID] [--activate]` | 注册自定义 HTML 主题 |
@@ -220,11 +220,14 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 
 ### 投送结果：200 / 202 要分清
 
-- **200**：已上屏。
-- **202 `{ok:true, queued:true}`**：设备界面不在前台（用户退到桌面 / app 被清后台），
+- **200**：已上屏——界面在前台、内容已交给 WebView，正常情况用户此刻就看得到。
+  唯一的例外是用户正停在 app 自己的「设置 / 历史」页（那层盖在内容上），关掉那页才看到内容。
+- **202 `{ok:true, queued:true}`**：设备界面**不可见**（退到桌面 / 屏幕熄灭 / app 被清后台），
   内容已排队，**设备回到前台会自动呈现**。这是正常路径，不要当成失败重试。
-  确认方式：`$A state <dev>` 的 `pending: true` 即表示还在队列里；让用户打开一次 app 或
-  `render --wake` 之后再查 `pending` 变 false、内容已上屏。
+  确认方式：`$A state <dev>` 的 `pending: true` 表示还在队列里；`foreground: false` 就是"界面不可见"。
+- `--wake` 对**内联 HTML 与 URL 两种投送都生效**；排队期间记下的 wake 会在补投时一起用。
+- 用户回「没看到」时：先看 `/state` 的 `foreground`。`foreground:false` → 让他打开一次 app；
+  `foreground:true` 且 `hasContent:true` → 直接重投一次，别在设备上猜。
 
 ### 直接写 HTTP 调用（不用 CLI）时必读
 

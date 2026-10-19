@@ -29,11 +29,31 @@ object CommandBus {
     @Volatile var pendingHtml: String? = null
         private set
 
+    /** 排队内容是否要求亮屏投（`--wake` 对 HTML 投送同样生效） */
+    @Volatile private var pendingWake = false
+
+    /**
+     * 内容已下发给 WebView、`onPageFinished` 还没到。
+     *
+     * 这段窗口里主题刷新**绝不能插队**：`syncLayers()` 看到 `hasContent` 还是 false，
+     * 就会走 `showHomeTheme()` 把待机主题 load 到内容之后，屏幕上只剩主题。
+     * 见 `MainActivity.syncLayers()` 的同名判断。
+     */
+    @Volatile private var contentRendering = false
+
     fun hasContent(): Boolean = currentUrl != null || lastHtml != null
     fun hasPending(): Boolean = pendingHtml != null
+    fun isContentRendering(): Boolean = contentRendering
+
+    /** 内容页加载完成（由 MainActivity.onPageFinished 按页面自报身份回填） */
+    fun markContentLoaded() { contentRendering = false }
+
+    /** 主框架加载失败：不再等 onPageFinished，立刻允许主题层接管 */
+    fun markLoadFailed() { contentRendering = false }
 
     fun clear() {
         lastHtml = null; currentUrl = null; pendingHtml = null
+        pendingWake = false; contentRendering = false
         // WebView 将被隐藏销毁内容，下次 render 重新载入
         main.post { App.webView?.loadUrl("about:blank") }
         onCleared?.invoke()
@@ -42,21 +62,30 @@ object CommandBus {
     var onCleared: (() -> Unit)? = null
 
     /**
-     * 投送 HTML。返回是否上了屏：
-     * - true：已投给 WebView；
-     * - false：当前没有 Activity/WebView，内容进 [pendingHtml] 排队，
-     *   等界面起来由 [flushPending] 补投（调用方据此回 `queued`，别再假装成功）。
+     * 投送 HTML。返回是否**真的呈现到了屏幕上**：
+     * - true：已交给可见的 WebView；
+     * - false：界面不存在或不在前台，内容进 [pendingHtml] 排队，
+     *   等界面回到前台由 [flushPending] 补投（调用方据此回 `queued`，别再假装成功）。
      */
-    fun renderHtml(html: String): Boolean {
-        lastHtml = html; currentUrl = null
-        if (App.webView == null) {
+    fun renderHtml(html: String, wake: Boolean = false): Boolean {
+        currentUrl = null
+        if (App.webView == null || !App.foreground) {
             pendingHtml = html // 只保留最后一份，避免堆积内存
+            pendingWake = pendingWake || wake
+            lastHtml = null    // 排队中不算"已上屏"：hasContent 保持 false，状态看 pending
+            contentRendering = false
             return false
         }
         pendingHtml = null
-        val full = embedSdk(html)
+        pendingWake = false
+        lastHtml = html
+        contentRendering = true
+        val full = embedSdk(html, KIND_CONTENT)
         // baseURL 不能为 null：opaque origin 下页面访问 localStorage 会抛 SecurityError
-        main.post { App.webView?.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null) }
+        main.post {
+            if (wake) App.activity?.let { Ui.wake(it) }
+            App.webView?.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null)
+        }
         return true
     }
 
@@ -65,10 +94,12 @@ object CommandBus {
         val html = pendingHtml ?: return
         main.post {
             val wv = App.webView ?: return@post
-            if (pendingHtml == null) return@post
-            pendingHtml = null
-            lastHtml = html; currentUrl = null
-            wv.loadDataWithBaseURL("https://aicast.local/", embedSdk(html), "text/html", "UTF-8", null)
+            if (pendingHtml != html) return@post   // 期间已被更新的投送覆盖
+            val wake = pendingWake
+            pendingHtml = null; pendingWake = false
+            lastHtml = html; currentUrl = null; contentRendering = true
+            if (wake) App.activity?.let { Ui.wake(it) }
+            wv.loadDataWithBaseURL("https://aicast.local/", embedSdk(html, KIND_CONTENT), "text/html", "UTF-8", null)
         }
     }
 
@@ -80,10 +111,24 @@ object CommandBus {
      */
     fun showHome(html: String) {
         lastHtml = null; currentUrl = null
-        val full = embedSdk(html) +
+        // 注意：**不要清 pendingHtml**。排队中的投送代表"用户回到前台就该看到的那一屏"，
+        // 主题刷新不该把它丢掉（回到前台时 flushPending 会盖在主题上）。
+        contentRendering = false
+        val full = embedSdk(html, KIND_THEME) +
             "<style>html,body{overflow:hidden!important}</style>"
         main.post { App.webView?.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null) }
     }
+
+    /**
+     * 页面加载完成后自报的身份标记。
+     *
+     * 以前 `onPageFinished` 用全局 `hasContent()` 判断"这是不是内容页"——主题页晚于内容页
+     * 完成时会把主题当成内容：`/state` 报 hasContent=true，屏幕上是时钟。
+     * 现在每个页面自己带着标记回来（内容="content"、主题="theme"），与完成顺序无关；
+     * url 投送的第三方页面没有标记，按内容处理。
+     */
+    const val KIND_CONTENT = "content"
+    const val KIND_THEME = "theme"
 
     // 页面脚本在解析期就可能调用 AiCast，而 evaluateJavascript 要到 onPageFinished
     // 才执行——因此内联投送时必须把 SDK 先嵌进 HTML 头部。
@@ -108,9 +153,12 @@ object CommandBus {
         return """<script>window.__AICAST_LANG__="$lang";</script>"""
     }
 
-    private fun embedSdk(html: String): String {
+    private fun embedSdk(html: String, kind: String): String {
         val sdk = sdkText()
-        val script = langScript() + if (sdk.isEmpty()) "" else "<script>$sdk</script>"
+        // kind 标记要放在 SDK 之前：SDK 与页面都可能在解析期就读它
+        val script = langScript() +
+            "<script>window.__AICAST_KIND=\"$kind\";</script>" +
+            if (sdk.isEmpty()) "" else "<script>$sdk</script>"
         val m = Regex("(?i)<head[^>]*>").find(html)
         return if (m != null) {
             html.substring(0, m.range.last + 1) + script + html.substring(m.range.last + 1)
@@ -119,11 +167,12 @@ object CommandBus {
         }
     }
 
-    /** 无可用 WebView 返回 false（调用方应回明确错误，不要让 agent 以为生效了） */
+    /** 无可用（可见）WebView 返回 false（调用方应回明确错误，不要让 agent 以为生效了） */
     fun loadUrl(url: String, wake: Boolean): Boolean {
-        if (App.webView == null) return false
+        if (App.webView == null || !App.foreground) return false
         if (wake) main.post { App.activity?.let { Ui.wake(it) } }
         currentUrl = url; lastHtml = null; pendingHtml = null
+        pendingWake = false; contentRendering = true
         main.post { App.webView?.loadUrl(url) }
         return true
     }
@@ -154,6 +203,8 @@ object CommandBus {
         put("theme", JsonPrimitive(Prefs.theme))
         put("fontScale", JsonPrimitive(Params.get("fontScale")))
         put("activityAlive", JsonPrimitive(App.activity != null))
+        // 界面是否真的可见：hasContent=true 但 foreground=false 表示内容已排队/暂不可见
+        put("foreground", JsonPrimitive(App.foreground))
         put("lastSeq", JsonPrimitive(lastSeq()))
         put("paramDbg", JsonPrimitive(Params.lastDbg))
     }
@@ -312,6 +363,27 @@ object Params {
 
     fun supportedKeys() = listOf("brightness", "theme", "fontScale", "volume")
 
+    /** 字号倍率 → WebSettings.textZoom 百分比（50%–300%） */
+    private fun zoomPercent(multiplier: Float): Int = (multiplier * 100).toInt().coerceIn(50, 300)
+
+    /** 当前应生效的 textZoom 百分比；WebView 创建时用它回放 */
+    fun currentZoomPercent(): Int =
+        zoomPercent(get("fontScale").toFloatOrNull()?.coerceIn(0.5f, 3f) ?: 1f)
+
+    /**
+     * 把字号倍率真正作用到投送页面。
+     *
+     * 以前 `fontScale` 只写 SharedPreferences，WebView 侧从未读过（`textZoom` 写死在 100），
+     * 而 `/info.capabilities` 又申报了这项能力 —— agent 调完拿到 ok，页面一个字都不变。
+     * `textZoom` 是文字缩放百分比，对页面里写死的 px 字号同样生效，不要求页面用 rem/em。
+     */
+    private fun applyTextZoom(multiplier: Float) {
+        val wv = App.webView ?: return
+        val zoom = zoomPercent(multiplier)
+        wv.post { wv.settings.textZoom = zoom }
+        lastDbg = "fontScale=$multiplier textZoom=$zoom"
+    }
+
     fun set(key: String, value: String): Boolean = when (key) {
         "brightness" -> {
             sp.edit().putString(key, value).apply()
@@ -330,7 +402,11 @@ object Params {
         "fontScale" -> {
             val f = value.toFloatOrNull()
             if (f == null || f < 0.5f || f > 3f) false
-            else { sp.edit().putString(key, value).apply(); true }
+            else {
+                sp.edit().putString(key, value).apply()
+                applyTextZoom(f)
+                true
+            }
         }
         "theme" -> {
             if (Themes.exists(value)) {

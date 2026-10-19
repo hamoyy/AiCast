@@ -1,5 +1,11 @@
 # AiCast（爱投屏）
 
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](#)
+[![LAN only](https://img.shields.io/badge/network-LAN%20only-lightgrey)](#)
+
+Turn spare Android phones, tablets and TVs into a screen for your AI agent — LAN only, no cloud, no account.
+
 快把吃灰的安卓电视、旧手机、闲置平板利用起来，交给AI！
 
 ---
@@ -145,4 +151,6 @@ docs/      设计文档与字体许可
 
 ## 许可
 
-字体 **JetBrains Mono** 依 SIL Open Font License 使用，许可见 [`docs/licenses/`](docs/licenses/)。
+AiCast 本体以 [Apache License 2.0](LICENSE) 发布，版权声明见 [NOTICE](NOTICE)。
+
+内置字体 **JetBrains Mono** 依 SIL Open Font License 使用，许可见 [`docs/licenses/`](docs/licenses/)。

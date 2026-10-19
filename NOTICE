@@ -1,0 +1,13 @@
+AiCast（爱投屏）
+Copyright 2026 hamoyy
+
+This product includes software developed as part of the AiCast project.
+
+Third-party components and their licenses:
+
+  * AndroidX / Jetpack Compose      Apache License 2.0
+  * Ktor                           Apache License 2.0
+  * Kotlin, kotlinx.coroutines,
+    kotlinx.serialization          Apache License 2.0
+  * JetBrains Mono font            SIL Open Font License 1.1
+                                   (see docs/licenses/JetBrainsMono-OFL.txt)

@@ -1,6 +1,6 @@
 ---
 name: aicast
-version: 1.0.2
+version: 1.0.3
 agent_created: true
 description: 局域网内向装了 AiCast app 的安卓设备投送 HTML 页面，并按设备画像（触摸/遥控/电视）决定内容形态、读交互回传。当用户要"给手机或电视投一页内容/把闲置安卓屏当 AI 的显示面板/投待办、简报、仪表盘、音频页"时使用。不是系统投屏：视频镜像、屏幕镜像、Miracast、AirPlay、DLNA 都不归它管。
 ---
@@ -281,6 +281,9 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 2. viewport 加 `maximum-scale=1, user-scalable=no`。
 3. 布局用绝对定位/居中；TV 退出走保留键 `←`=历史、`MENU`=设置，**主题不要占用这两个键**。
 4. 用户也可在设备设置页 → 待机主题 里点选切换。
+5. **自定义主题 id 有规则**：1–40 位 `[A-Za-z0-9_-]`，且不能等于内置 id（`native` / `aurora` /
+   `minimal-light`）。违规直接 **400 `bad_theme`**，不会静默改名——撞内置 id 会让 `htmlFor()`
+   永远命中内置版，等于写出一份读不到也删不掉的孤儿条目。
 
 ## 安全与礼仪
 

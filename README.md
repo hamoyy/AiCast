@@ -3,6 +3,9 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](#)
 [![LAN only](https://img.shields.io/badge/network-LAN%20only-lightgrey)](#)
+[![Release](https://img.shields.io/github/v/release/hamoyy/AiCast?label=download)](https://github.com/hamoyy/AiCast/releases/latest)
+
+官网：<https://aicast.lvchen.fun> ｜ 下载：<https://github.com/hamoyy/AiCast/releases/latest>
 
 Turn spare Android phones, tablets and TVs into a screen for your AI agent — LAN only, no cloud, no account.
 

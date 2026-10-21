@@ -32,6 +32,19 @@ AiCast 让 agent（智能体）拥有一块屏幕：设备上装一个 app，age
 | agent 的表达窗口  | 任意设备       | 一句话、一份报告、一张图              |
 | ……           |            | 剩下的交给你的脑洞                 |
 
+## 快速开始
+
+三步，不用记任何命令。
+
+**1. 设备端**：装 AiCast app，首次打开**允许通知权限**，确认「设置」里的投送开关是开着的，顺手把设备命名成「客厅电视」这种好认的名字。
+
+**2. 电脑端**：把下面这段话整段发给你的 agent（智能体）——
+
+> 帮我安装 AiCast 技能：<https://github.com/hamoyy/AiCast>
+> 做法：克隆仓库，读 `skill/SKILL.md`，按里面说的把技能装进你的技能目录（WorkBuddy 是 `~/.workbuddy/skills/aicast/`，Claude Code 是 `~/.claude/skills/aicast/`），然后跑 `python skill/scripts/check_environment.py` 自检，再用 `bin/aicast discover` 看看局域网里有几台 AiCast 设备。
+
+**3. 之后直接说人话**：「把今天的待办投到客厅电视。」
+
 ## 怎么用
 
 ### 需要准备什么
@@ -53,11 +66,22 @@ AiCast 让 agent（智能体）拥有一块屏幕：设备上装一个 app，age
 
 ### 第二步：让 agent 认识 AiCast
 
-给 agent 安装一次 AiCast 技能。不想自己动手也没关系，把仓库地址直接发给它，让它自己装：
+技能本体就在仓库的 `skill/` 目录里：一份 [`SKILL.md`](skill/SKILL.md)（写给 agent 看的说明书）+ 一个零依赖 CLI（`skill/bin/aicast`，只需要 Node 18+）。**所以你不用自己读文档，把网址丢给 agent 就行，它自己会装。**
 
-> <https://github.com/hamoyy/AiCast>
+> 帮我安装 AiCast 技能：<https://github.com/hamoyy/AiCast>。克隆后读 `skill/SKILL.md`，把 `skill/` 放进你的技能目录，然后自检并搜索局域网里的设备。
 
-装好后可以问一句「查找局域网里的 AiCast 设备」试试，能列出你的设备就说明通了。
+装完怎么确认真的通了——下面这些都可以直接让 agent 去跑：
+
+| 想知道 | 让它跑 | 正常的样子 |
+| --- | --- | --- |
+| 运行时就绪没有 | `python skill/scripts/check_environment.py` | `ready`（缺 Node 18+ 会告诉你装什么） |
+| 找得到设备吗 | `node skill/bin/aicast discover` | 列出设备名 + IP + 画像摘要 |
+| 看得懂这台设备吗 | `node skill/bin/aicast info <dev>` | 屏幕尺寸、能否触摸、有没有遥控器、内核档位 |
+| 投一页试试 | `node skill/bin/aicast render <dev> --html-file page.html --wake` | 设备上立刻出现这一页 |
+
+`<dev>` 那一位写设备名、`deviceId` 或 `ip:port` 都行，agent 会自己解析。设备要是**认证模式**，它会向你要密码，换来的通行证存在本机 `~/.aicast/devices.json`，30 天内不用再输。
+
+**搜不到设备时**：让 agent 看 `discover` 输出里的 `mdnsDiag`——5353 端口被占、路由器禁了组播都会写明原因；也可以把设备待机页底部显示的 IP 告诉它，用 `discover --address 192.168.x.x` 手动登记（端口不是默认的 43210 就写成 `192.168.x.x:43211`）。
 
 ### 第三步：直接说你要什么
 
@@ -147,7 +171,8 @@ agent（智能体）在投送前会先看一眼这台设备长什么样——是
 
 ```
 app/       安卓端 app（装到设备上的那个）
-skill/     agent 技能：命令工具 + 说明文档 + 内容模板
+skill/     agent 技能：SKILL.md（写给 agent 的说明书）+ 零依赖 CLI + 内容模板
+           —— agent 只需要这一个目录，其余部分它不用管
 scripts/   开发和验证用的小脚本
 docs/      设计文档与字体许可
 ```

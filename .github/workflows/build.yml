@@ -59,21 +59,45 @@ jobs:
             echo "::warning::未配置 AICAST_KEYSTORE_BASE64，本次用临时签名，装到已有设备需先卸载"
           fi
 
-      - name: 编译 debug APK
+      - name: 编译 debug APK（日常推送 / PR）
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon --console=plain
 
-      - name: 上传 APK（在 Actions 页面可下载）
+      # 打 tag 时出 release 包：R8 裁剪过、体积小，安装包文件名统一成 aicast-<tag>.apk，
+      # 这样官网下载按钮（GitHub Releases 直链）的地址是固定的、可预测的。
+      - name: 编译 release APK（打 tag 时）
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon --console=plain
+          mkdir -p dist
+          cp app/build/outputs/apk/release/*.apk "dist/aicast-${GITHUB_REF_NAME}.apk"
+          # 固定文件名：官网用 releases/latest/download/aicast.apk 指过来，
+          # 以后每发一版都不用改官网代码
+          cp "dist/aicast-${GITHUB_REF_NAME}.apk" dist/aicast.apk
+          ls -l dist
+
+      - name: 上传 debug APK（在 Actions 页面可下载）
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
           name: aicast-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
+      - name: 上传 release APK（在 Actions 页面可下载）
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: aicast-release-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
       - name: 打 tag 时自动发布 Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          files: app/build/outputs/apk/debug/*.apk
+          files: dist/*.apk
           generate_release_notes: true

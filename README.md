@@ -40,9 +40,9 @@ AiCast 让 agent（智能体）拥有一块屏幕：设备上装一个 app，age
 
 **2. 电脑端**：把下面这段话整段发给你的 agent（智能体）——
 
-> 帮我安装 AiCast 技能：<https://github.com/hamoyy/AiCast>
+> 帮我装一下 AiCast 技能：<https://github.com/hamoyy/AiCast>
 >
-> 做法：克隆仓库，读 `skill/SKILL.md`，按里面说的把技能装进你的技能目录（WorkBuddy 是 `~/.workbuddy/skills/aicast/`，Claude Code 是 `~/.claude/skills/aicast/`），然后跑 `python skill/scripts/check_environment.py` 自检，再用 `bin/aicast discover` 看看局域网里有几台 AiCast 设备。
+> 克隆下来后先读 `skill/SKILL.md` 并以它为准；把仓库里的 skill 目录装到你技能目录下的 `aicast`，再用 `bin/aicast discover` 看看能不能列出我家里的 AiCast 设备。
 
 **3. 之后直接说人话**：「把今天的待办投到客厅电视。」
 

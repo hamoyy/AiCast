@@ -7,9 +7,7 @@
 
 官网：<https://aicast.lvchen.fun> ｜ 下载：<https://github.com/hamoyy/AiCast/releases/latest>
 
-Turn spare Android phones, tablets and TVs into a screen for your AI agent — LAN only, no cloud, no account.
-
-快把吃灰的安卓电视、旧手机、闲置平板利用起来，交给AI！
+把吃灰的安卓电视、旧手机、闲置平板变成 AI 的投送屏 —— 只用局域网，无云端、无账号、不投屏。
 
 ---
 
@@ -177,6 +175,12 @@ skill/     agent 技能：SKILL.md（写给 agent 的说明书）+ 零依赖 CLI
 scripts/   开发和验证用的小脚本
 docs/      设计文档与字体许可
 ```
+
+## English
+
+Turn spare Android phones, tablets and TVs into a screen for your AI agent. The agent renders HTML and casts it over your LAN — no cloud, no account, no screen mirroring.
+
+Website <https://aicast.lvchen.fun> · Download <https://github.com/hamoyy/AiCast/releases/latest> · Agent docs [skill/SKILL.md](skill/SKILL.md)
 
 ## 许可
 

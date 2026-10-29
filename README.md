@@ -56,7 +56,7 @@ AiCast 让 agent（智能体）拥有一块屏幕：设备上装一个 app，age
 
 只要它能读文件、能执行命令就行——AiCast 技能本体就是一个说明文档加一个命令行小工具。纯聊天类的 AI 助手干不了这个活，得用下面这些：
 
-- **国内**：CodeBuddy、WorkBuddy、通义灵码 / Qoder、Trae、文心快码等
+- **国内**：DeepSeek Harness、CodeBuddy、WorkBuddy、通义灵码 / Qoder、Trae、文心快码等
 - **海外**：Claude Code、Codex、Cursor、OpenClaw、Hermes等
 
 ### 第一步：给设备装上 AiCast

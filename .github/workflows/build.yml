@@ -18,6 +18,20 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
+        with:
+          # 拉全量历史+标签：GitCode 镜像同步需要完整提交记录和 tags
+          fetch-depth: 0
+
+      # 代码镜像到 GitCode（国内访问 GitHub 慢，镜像仓库给国内用户看代码/下源码）
+      # push main 或打 tag 时自动推过去，平时无需登录 GitCode 打理
+      - name: 同步代码镜像到 GitCode
+        if: github.event_name != 'pull_request'
+        env:
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+        run: |
+          MIRROR_URL="https://hamoyy:${GITCODE_TOKEN}@gitcode.com/hamoyy/AiCast.git"
+          git push --force "$MIRROR_URL" "HEAD:refs/heads/main"
+          git push --force "$MIRROR_URL" --tags
 
       - name: 装 JDK 17
         uses: actions/setup-java@v6
@@ -101,3 +115,33 @@ jobs:
         with:
           files: dist/*.apk
           generate_release_notes: true
+
+      # 把 APK 同步发到 GitCode 的 Release（GitCode 镜像只同步代码不同步附件）
+      # 流程：创建 Release -> 逐个文件申请预签名上传地址 -> PUT 上传
+      - name: 同步 APK 到 GitCode Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          API="https://api.gitcode.com/api/v5/repos/hamoyy/AiCast"
+          # Release 已存在就跳过创建（幂等）
+          EXIST=$(curl -s -o /dev/null -w '%{http_code}' "$API/releases/$TAG")
+          if [ "$EXIST" != "200" ]; then
+            curl -s -X POST "$API/releases" -H "Content-Type: application/json" \
+              -d "{\"access_token\":\"$GITCODE_TOKEN\",\"tag_name\":\"$TAG\",\"name\":\"AiCast $TAG\",\"body\":\"安装包在下方 Assets 里（国内下载用）\"}"
+            echo
+          fi
+          for f in dist/*.apk; do
+            fname=$(basename "$f")
+            curl -s "$API/releases/$TAG/upload_url?access_token=$GITCODE_TOKEN&file_name=$fname" > /tmp/gc_up.json
+            URL=$(jq -r '.url // empty' /tmp/gc_up.json)
+            if [ -z "$URL" ]; then echo "拿不到上传地址：$(cat /tmp/gc_up.json)"; exit 1; fi
+            # 把接口返回的 headers 展开成 curl 参数（GitCode 用华为 OBS 预签名上传）
+            ARGS=()
+            while IFS= read -r line; do ARGS+=("$line"); done < <(jq -r '.headers // {} | to_entries[] | "-H", "\(.key): \(.value)"' /tmp/gc_up.json)
+            echo "上传 $fname"
+            curl -s -m 600 -X PUT "$URL" "${ARGS[@]}" --data-binary "@$f" -w " HTTP:%{http_code}\n"
+          done
+          echo "GitCode 下载链接："
+          curl -s "$API/releases/$TAG" | jq -r '.assets[] | select(.type != "source") | " - \(.name)  \(.browser_download_url)"'

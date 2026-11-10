@@ -13,8 +13,10 @@ android {
         applicationId = "com.aicast.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // versionCode 必须单调递增：应用内更新靠它判断新旧。
+        // 打 tag 发版时 CI 会校验 tag 与 versionName 一致（见 .github/workflows/build.yml）。
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     signingConfigs {

@@ -117,6 +117,22 @@ object Prefs {
         } else false
     }
 
+    // ---------- 应用更新（见 Updater / UpdateUi.kt） ----------
+
+    /**
+     * 用户在弹窗里点了「以后再说」的那个 versionCode。
+     * 同一版本不再自动弹窗（否则每次开 app 都骚扰一次），换个新版本才会再问一次；
+     * 设置页的「检查更新」不受它限制。
+     */
+    var updateDeclinedVersion: Int
+        get() = sp.getInt("update_declined", 0)
+        set(v) = sp.edit().putInt("update_declined", v).apply()
+
+    /** 上次自动检查的时间戳（毫秒）；用于「一天最多自动查一次」的节流 */
+    var updateLastCheckAt: Long
+        get() = sp.getLong("update_last_check", 0L)
+        set(v) = sp.edit().putLong("update_last_check", v).apply()
+
     private fun hash(salt: String, plain: String): String = sha256hex("$salt:$plain")
 
     private fun sha256hex(s: String): String =

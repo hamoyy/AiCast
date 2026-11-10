@@ -93,6 +93,46 @@ jobs:
           cp "dist/aicast-${GITHUB_REF_NAME}.apk" dist/aicast.apk
           ls -l dist
 
+      # 应用内更新的清单：版本号 / 大小 / sha256 / 下载地址。
+      # 校验 tag 与 versionName 一致 —— 不一致会让「用户看到 0.2.0、装的却是 0.1.0」，
+      # 而更新逻辑是按 versionCode 判断的，这种错会静默误导。
+      - name: 生成 update.json（打 tag 时）
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_NOTES: ${{ github.event.head_commit.message }}
+        run: |
+          set -e
+          VNAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+          VCODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts | head -1)
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "$VNAME" != "$TAG" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 versionName $VNAME 不一致（更新判断依赖它）"
+            exit 1
+          fi
+          MINSUP=$(sed -n 's/^minSupportedVersionCode=\([0-9]*\).*/\1/p' app/update-policy.properties | head -1)
+          APK="dist/aicast-${GITHUB_REF_NAME}.apk"
+          python3 - "$APK" "$GITHUB_REF_NAME" "$VCODE" "$VNAME" "${MINSUP:-$VCODE}" > dist/update.json <<'PY'
+          import hashlib, json, os, sys, datetime
+          apk, tag, vcode, vname, minsup = sys.argv[1:6]
+          h = hashlib.sha256()
+          with open(apk, 'rb') as f:
+              for chunk in iter(lambda: f.read(1 << 20), b''):
+                  h.update(chunk)
+          doc = {
+              "versionCode": int(vcode),
+              "versionName": vname,
+              "minSupportedVersionCode": int(minsup),
+              "apkUrl": f"https://gitcode.com/hamoyy/AiCast/releases/download/{tag}/aicast.apk",
+              "apkUrlFallback": f"https://github.com/hamoyy/AiCast/releases/download/{tag}/aicast.apk",
+              "size": os.path.getsize(apk),
+              "sha256": h.hexdigest(),
+              "notes": os.environ.get("RELEASE_NOTES", "").strip(),
+              "pubDate": datetime.date.today().isoformat(),
+          }
+          print(json.dumps(doc, ensure_ascii=False, indent=2))
+          PY
+          cat dist/update.json
+
       - name: 上传 debug APK（在 Actions 页面可下载）
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
@@ -113,7 +153,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*.apk
+          # 连 update.json 一起发：应用内更新先读官网那份，官网没跟上时回落到这里
+          files: dist/*
           generate_release_notes: true
 
       # 把 APK 同步发到 GitCode 的 Release（GitCode 镜像只同步代码不同步附件）
@@ -132,7 +173,8 @@ jobs:
               -d "{\"access_token\":\"$GITCODE_TOKEN\",\"tag_name\":\"$TAG\",\"name\":\"AiCast $TAG\",\"body\":\"安装包在下方 Assets 里（国内下载用）\"}"
             echo
           fi
-          for f in dist/*.apk; do
+          for f in dist/*.apk dist/update.json; do
+            [ -f "$f" ] || continue
             fname=$(basename "$f")
             curl -s "$API/releases/$TAG/upload_url?access_token=$GITCODE_TOKEN&file_name=$fname" > /tmp/gc_up.json
             URL=$(jq -r '.url // empty' /tmp/gc_up.json)

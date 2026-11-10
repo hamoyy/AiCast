@@ -20,15 +20,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
+
+    /** 应用更新：查清单 / 下载 / 装。放在 Activity 作用域里，跟着界面一起结束 */
+    private val updateController by lazy { UpdateController(this, lifecycleScope) }
 
     private val hasContent = mutableStateOf(false)
     private val showSettings = mutableStateOf(false)
@@ -68,6 +74,13 @@ class MainActivity : ComponentActivity() {
                         settingsVersion.value // 订阅：设置页关闭后重组
                         historyVersion.value // 订阅：历史清空后重组
                         themeVersion.value   // 订阅：主题切换后重组
+
+                        // 应用打开后延迟检查更新：不抢首帧，也不阻塞服务就绪。
+                        // 是否真的发请求由 controller 自己节流（一天最多一次、失败静默）。
+                        LaunchedEffect(Unit) {
+                            delay(8000)
+                            updateController.checkAutomatically()
+                        }
                         if (showSettings.value) {
                             SettingsScreen(
                                 onClose = {
@@ -75,7 +88,8 @@ class MainActivity : ComponentActivity() {
                                     settingsVersion.value++
                                     syncLayers()
                                 },
-                                onChanged = { NsdAdvertiser.restart(applicationContext) }
+                                onChanged = { NsdAdvertiser.restart(applicationContext) },
+                                update = updateController
                             )
                         } else if (hasContent.value) {
                             // 内容显示中：WebView 覆盖层负责呈现，Compose 层留空
@@ -112,6 +126,11 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         }
+
+                        // 更新弹窗画在最上层（Compose 层内）。WebView 会盖住 Compose，
+                        // 所以 dialogVisible 一并算进 syncLayers 的 overlay 条件里把 WebView 收起。
+                        LaunchedEffect(updateController.dialogVisible) { syncLayers() }
+                        UpdateDialog(updateController)
                     }
                 }
             }
@@ -142,6 +161,11 @@ class MainActivity : ComponentActivity() {
                 // 返回键直觉：设置页 → 关设置回主页；历史页 → 关历史回主页；
                 // 有投送 → 清屏回待机；已在待机 → 才退出
                 when {
+                    // 弹窗优先：先关弹窗，不要把整个 app 退出
+                    updateController.dialogVisible -> {
+                        updateController.dismissDialog()
+                        syncLayers()
+                    }
                     showSettings.value -> {
                         showSettings.value = false
                         settingsVersion.value++
@@ -165,7 +189,9 @@ class MainActivity : ComponentActivity() {
      * `hasContent` 仍是 false，若照常走分支就会把待机主题 load 到内容之后，屏幕被主题占掉。
      */
     private fun syncLayers() {
-        val overlay = showSettings.value || showHistory.value
+        // 更新弹窗也算覆盖层：WebView 是 addContentView 挂上去的，会盖住 Compose 层，
+        // 不收起来的话弹窗根本看不见（待机是 HTML 主题时尤其明显）。
+        val overlay = showSettings.value || showHistory.value || updateController.dialogVisible
         val htmlHome = Themes.isHtml(Prefs.theme)
         val contentShowing = hasContent.value || CommandBus.isContentRendering()
         val show = !overlay && (contentShowing || htmlHome)

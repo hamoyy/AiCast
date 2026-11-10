@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内更新用：只开放 cacheDir 下的这一个目录给 FileProvider。
+  安装包固定落在 cacheDir/aicast-update.apk（见 Updater.download），
+  所以既不需要 external 路径，也不要 openFileDescriptor 之外的任何暴露面。
+-->
+<paths>
+    <cache-path name="update" path="." />
+</paths>

@@ -65,7 +65,7 @@ private val rowFocusBg = Color(0xFF20262F)
 
 /** 设置页（M2，§10）：名称 / 待机主题 / 访问模式（投送 + 密码）/ 本机 */
 @Composable
-fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
+fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit, update: UpdateController) {
     var name by remember { mutableStateOf(Prefs.name) }
     var mode by remember { mutableStateOf(Prefs.mode) }
     var theme by remember { mutableStateOf(Prefs.theme) }
@@ -353,6 +353,12 @@ fun SettingsScreen(onClose: () -> Unit, onChanged: () -> Unit) {
                     if (DeviceInfo.isTouch()) stringResource(R.string.yes)
                     else stringResource(R.string.no)
             )
+        }
+
+        // 关于：版本号 + 手动检查更新。**这里必须常驻**——用户在启动弹窗里点了
+        // 「以后再说」之后，唯一的入口就是它（不能被节流或「同版本只弹一次」挡掉）。
+        Section(stringResource(R.string.settings_about)) {
+            AboutSection(update) { m -> msg = m }
         }
 
         msg?.let {

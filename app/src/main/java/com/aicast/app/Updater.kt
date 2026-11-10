@@ -88,7 +88,12 @@ object Updater {
                 lastError = e
             }
         }
-        if (found.isEmpty()) throw (lastError ?: Exception("no manifest"))
+        if (found.isEmpty()) {
+            // 一个清单都没拿到：要么还没发过带清单的版本（404，属正常），
+            // 要么网络全挂。只有出现真正的网络异常才报错，别把「还没发版」演成故障。
+            if (lastError != null) throw lastError
+            return@withContext null
+        }
         val newest = found.maxByOrNull { it.versionCode }!!
         if (newest.versionCode > currentVersionCode(ctx)) newest else null
     }

@@ -5,6 +5,7 @@
  *
  * 用法:
  *   aicast discover [--timeout 3000] [--address ip:port]
+ *   aicast doctor [<dev>]                                # 技能/设备版本兼容自检（升级前后各跑一次）
  *   aicast list
  *   aicast auth   <dev> --password-stdin                  # 推荐：口令走管道
  *   aicast auth   <dev> --password <pwd>                  # 兼容旧写法（会进 shell history）
@@ -32,6 +33,51 @@ const path = require('path');
 
 const STORE_DIR = process.env.AICAST_HOME || path.join(os.homedir(), '.aicast');
 const STORE_FILE = path.join(STORE_DIR, 'devices.json');
+
+// ---------- 技能版本 / 兼容性 ----------
+// 本技能的版本号：必须与 SKILL.md frontmatter 的 `version:` 一致（doctor 会校验）。
+// app 在 /info 里回 app.minSkillVersion —— 低于它说明设备端已经变了语义，老技能会出错，
+// 此时不要硬干，先按 SKILL.md「技能自身更新」一节把技能升上去。
+const SKILL_VERSION = '1.1.0';
+const UPGRADE_STEPS = [
+  '技能目录若是 git clone：git -C <技能目录>/.. pull',
+  '否则整目录重取（国内优先 GitCode 镜像，拉不动再换 GitHub）：' +
+    'git clone --depth 1 https://gitcode.com/hamoyy/AiCast ' +
+    '&& cp -R AiCast/skill/. <技能目录>/（SKILL.md、bin、references、scripts、templates 一起换）',
+  'GitHub 版备用：git clone --depth 1 https://github.com/hamoyy/AiCast',
+];
+
+function parseVer(v) {
+  if (typeof v !== 'string') return null;
+  const core = v.trim().replace(/^v/, '').split('-')[0].split('+')[0];
+  const p = core.split('.');
+  if (p.length !== 3) return null;
+  const n = p.map(x => (/^\d+$/.test(x) ? parseInt(x, 10) : NaN));
+  return n.some(Number.isNaN) ? null : n;
+}
+function verLess(a, b) {
+  const pa = parseVer(a), pb = parseVer(b);
+  if (!pa || !pb) return false; // 解析不了就不判落后：宁可少提示，不可全员误报
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] < pb[i];
+  return false;
+}
+/** 从 /info 判断技能是否落后；不落后返回 null */
+function skillSkew(info) {
+  const min = info && info.app && info.app.minSkillVersion;
+  if (!min || !verLess(SKILL_VERSION, min)) return null;
+  return {
+    current: SKILL_VERSION,
+    required: min,
+    message: `技能 v${SKILL_VERSION} 低于设备要求的最低版本 v${min}：设备端语义已变，先升级技能再干活。`,
+    upgrade: UPGRADE_STEPS,
+  };
+}
+function warnSkew(skew, dev) {
+  if (!skew) return;
+  // 走 stderr：stdout 是给 agent 解析的 JSON，别把提示混进去打断解析
+  console.error(`[aicast] ${dev ? dev + '：' : ''}${skew.message}`);
+  for (const s of skew.upgrade) console.error(`[aicast]   → ${s}`);
+}
 
 // ---------- store ----------
 function loadStore() {
@@ -223,7 +269,10 @@ async function cmdDiscover(args) {
         // 老版本 app 没有这个字段，缺省视为可接受投送
         accepting: info.accepting === undefined ? true : !!info.accepting,
         acceptingHint: info.acceptingHint || null,
+        appVersion: (info.app && info.app.version) || null,
       };
+      const skew = skillSkew(info);
+      if (skew) { rec.skillOutdated = skew; warnSkew(skew, rec.name || d.address); }
       const id = rec.deviceId || rec.address;
       const prev = store.devices[id] || {};
       store.devices[id] = { ...prev, name: rec.name, address: rec.address };
@@ -282,7 +331,65 @@ async function cmdAuth(key, args) {
 }
 async function cmdInfo(key) {
   const dev = resolveDev(key);
-  console.log(JSON.stringify(await api(dev, 'GET', '/info'), null, 1));
+  const info = await api(dev, 'GET', '/info');
+  const skew = skillSkew(info);
+  if (skew) { info.skillOutdated = skew; warnSkew(skew, info.name || dev.id); }
+  console.log(JSON.stringify(info, null, 1));
+}
+
+/**
+ * 版本/环境自检。技能升级前后各跑一次：compatible=false 就照 upgrade 里的命令做。
+ * 也顺手校验 SKILL.md 的 version 与 CLI 里的 SKILL_VERSION 是否一致 —— 只改一边
+ * 会让「技能版本」这个判断整个失真，而且不会报错，很容易漏。
+ */
+async function cmdDoctor(key) {
+  const sv = process.versions;
+  const out = {
+    ok: true,
+    skillVersion: SKILL_VERSION,
+    node: sv.node,
+    nodeOk: parseInt(sv.node.split('.')[0], 10) >= 18,
+    devices: [],
+  };
+  // 1) SKILL.md 与 CLI 的版本必须一致
+  try {
+    const md = fs.readFileSync(path.join(__dirname, '..', 'SKILL.md'), 'utf8');
+    const m = md.match(/^version:\s*(\S+)/m);
+    out.skillMdVersion = m ? m[1] : null;
+    out.skillMdMatchesCli = !!m && m[1] === SKILL_VERSION;
+    if (!out.skillMdMatchesCli) out.ok = false;
+  } catch (e) {
+    out.skillMdVersion = null;
+    out.skillMdMatchesCli = false;
+    out.ok = false;
+  }
+  if (!out.nodeOk) out.ok = false;
+
+  // 2) 逐设备比对 app 要求的最低技能版本
+  const store = loadStore();
+  const targets = key
+    ? [resolveDev(key)]
+    : Object.entries(store.devices).map(([id, d]) => ({ id, ...d }));
+  let worst = null;
+  for (const d of targets) {
+    try {
+      const info = await api({ ...d, address: d.address }, 'GET', '/info', undefined, { timeoutMs: 3000 });
+      const min = (info.app && info.app.minSkillVersion) || null;
+      const skew = skillSkew(info);
+      out.devices.push({
+        deviceId: info.deviceId || d.id, name: info.name, address: d.address,
+        appVersion: (info.app && info.app.version) || null,
+        minSkillVersion: min,
+        compatible: min ? !skew : null, // null = 老 app 没上报基线，无从判断
+      });
+      if (skew && !worst) worst = skew;
+    } catch (e) {
+      out.devices.push({ deviceId: d.id, address: d.address, reachable: false, error: String(e.message || e) });
+    }
+  }
+  if (worst) { out.ok = false; out.upgrade = worst.upgrade; out.message = worst.message; warnSkew(worst); }
+  if (!out.devices.length) out.hint = '还没有登记设备：先 aicast discover --address <ip:port>';
+  console.log(JSON.stringify(out, null, 1));
 }
 async function cmdRender(key, args) {
   const dev = resolveDev(key);
@@ -448,6 +555,7 @@ async function main() {
   try {
     switch (cmd) {
       case 'discover': return await cmdDiscover(args);
+      case 'doctor': return await cmdDoctor(devKey);
       case 'list': return cmdList();
       case 'auth': need(devKey, 'auth <dev|ip:port> --password-stdin'); return await cmdAuth(devKey, args);
       case 'info': need(devKey); return await cmdInfo(devKey);
@@ -461,7 +569,7 @@ async function main() {
       case 'media': need(devKey); return await cmdMedia(devKey, pos.slice(2), args);
       case 'forget': need(devKey); return cmdForget(devKey);
       default:
-        console.log('用法: aicast <discover|list|auth|info|render|message|events|state|param|themes|theme|media|forget> [参数]  (详见文件头注释)');
+        console.log('用法: aicast <discover|doctor|list|auth|info|render|message|events|state|param|themes|theme|media|forget> [参数]  (详见文件头注释)');
         process.exit(cmd ? 1 : 0);
     }
   } catch (e) {

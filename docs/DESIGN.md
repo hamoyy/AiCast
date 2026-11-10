@@ -256,9 +256,24 @@
   "appearance":{"darkMode":true},
   "internet":{"state":"online","validated":true,"transport":"wifi"},   // 设备端实测
   "system":{"android":"12","battery":null,"charging":true,"screenOn":true},
-  "app":{"version":"0.1.0-m1","port":43210}
+  "app":{"version":"0.1.0-m1","port":43210,"foreground":true,
+         "minSkillVersion":"1.1.0"}     // 能完整驱使本版本 app 的最低技能版本，见下方「技能版本基线」
 }
 ```
+
+**技能版本基线（只增不改）**
+
+技能装在用户的电脑上，app 升级时**无法**更新它（跨机器、无凭证、目录因 agent 而异），所以线上
+必然长期存在「新 app + 老技能」。处理办法是让技能自己发现落后：
+
+- `app.minSkillVersion`（本字段，M1 之后新增）是能完整驱使本版本 app 的**最低技能版本**；
+- agent 端 CLI 把自身 `SKILL_VERSION` 与它比较，落后就输出 `skillOutdated{current,required,message,upgrade}`
+  并在 stderr 提示，`aicast doctor` 也会 `ok:false`；
+- 老技能读不到这个字段 → 不做任何判断，行为与从前一致（**不得**因为缺字段而报错或拒绝服务）；
+- **改法**：app 只做「加字段/加端点」，不改既有字段语义。真要改语义（删端点、改状态码含义）时，
+  才把 `Compat.MIN_SKILL_VERSION` 升到对应技能版本，并在同一 PR 里改 `skill/SKILL.md` 的 `version:`。
+
+实现位置：`Compat.kt`（常量与 semver 比较）、`DeviceInfo.kt` 的 `app` 对象、`skill/bin/aicast`。
 
 **Android 检测方式**
 - `class`：`Configuration.uiMode & UI_MODE_TYPE_MASK` → `UI_MODE_TYPE_TELEVISION`/`WATCH`；`smallestScreenWidthDp ≥ 600` 判平板，否则手机；`hasSystemFeature(FEATURE_LEANBACK)` 佐证 TV。

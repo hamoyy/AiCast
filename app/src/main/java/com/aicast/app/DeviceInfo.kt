@@ -141,7 +141,10 @@ object DeviceInfo {
                         "version" to JsonPrimitive(appVersion()),
                         "port" to JsonPrimitive(Server.port),
                         // 界面是否真的可见：false 时 /render 一律 202 排队，内容不会"投上去看不见"
-                        "foreground" to JsonPrimitive(App.foreground)
+                        "foreground" to JsonPrimitive(App.foreground),
+                        // 技能兼容基线：agent 端 CLI 拿它跟自己的版本比，落后就自己提示升级，
+                        // 并附带升级命令。老技能读不到这个字段不受影响（只增不改）。
+                        "minSkillVersion" to JsonPrimitive(Compat.MIN_SKILL_VERSION)
                     )
                 )
             )

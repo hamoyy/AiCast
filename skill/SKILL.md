@@ -210,6 +210,10 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
 ## 交互回传（按需，不是日常必用）
 
 页内 SDK 已自动注入，内容里随时可 `AiCast.emit(name, data)` 回传事件、`AiCast.onMessage` 收增量数据。
+`AiCast.emit` / `AiCast.onMessage` 是**同步**的，但 `AiCast.getInfo()` 返回的是 **Promise**
+（`await` 或 `.then` 才拿到解析好的画像对象；直接当对象用会得到 `[object Promise]`，
+版本号/设备名这种字段就是这么来的：`AiCast.getInfo().then(i => i.app.version)`）。
+
 读取端**不需要常驻监听服务**：设备侧有事件环形缓冲（**最近 200 条**），
 `$A events <dev> --since 0` 任何时候跑一次就能把攒下的事件一次取回；`--follow` 持续监听仅调试时用。
 建议用在：需要知道用户点了什么（投票/勾选/游戏）、或排查页面为什么没反应。日常投送不取事件也完全成立。

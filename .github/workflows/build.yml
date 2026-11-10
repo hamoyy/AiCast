@@ -24,14 +24,25 @@ jobs:
 
       # 代码镜像到 GitCode（国内访问 GitHub 慢，镜像仓库给国内用户看代码/下源码）
       # push main 或打 tag 时自动推过去，平时无需登录 GitCode 打理
+      #
+      # 注意：main 与 tag 若在同一分钟内触发，两次 job 会并发 force push 同一个 ref，
+      # GitCode 会以「cannot lock ref … is at X but expected Y」拒绝掉后到的那次
+      # （实测 2026-11-10 发 v0.2.0 时踩到，main 那次整体失败）。所以重试 + 不让它挡住发布。
       - name: 同步代码镜像到 GitCode
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         env:
           GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
         run: |
           MIRROR_URL="https://hamoyy:${GITCODE_TOKEN}@gitcode.com/hamoyy/AiCast.git"
-          git push --force "$MIRROR_URL" "HEAD:refs/heads/main"
-          git push --force "$MIRROR_URL" --tags
+          for i in 1 2 3; do
+            if git push --force "$MIRROR_URL" "HEAD:refs/heads/main" && git push --force "$MIRROR_URL" --tags; then
+              echo "镜像同步完成"; exit 0
+            fi
+            echo "::warning::镜像同步第 ${i} 次失败，3 秒后重试"
+            sleep 3
+          done
+          echo "::warning::GitCode 镜像同步失败；镜像落后不影响 GitHub 发布，下次 push 会自动补上"
 
       - name: 装 JDK 17
         uses: actions/setup-java@v6

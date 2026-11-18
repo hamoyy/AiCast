@@ -1,3 +1,6 @@
+// 只在 API 21+ 启动（见 LauncherActivity）：文件内所有 API 21+ 调用都不会在 4.4 上执行
+@file:Suppress("NewApi", "RestrictedApi")
+
 package com.aicast.app
 
 import android.os.Bundle

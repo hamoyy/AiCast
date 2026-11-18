@@ -109,7 +109,7 @@ class AiCastService : Service() {
             )
         }
         val pi = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, LauncherActivity::class.java),
             if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
         )
         val notif: Notification = NotificationCompat.Builder(this, channelId)
@@ -134,7 +134,7 @@ class AiCastService : Service() {
         lastNotifText = text
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val pi = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, LauncherActivity::class.java),
             if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
         )
         val notif = NotificationCompat.Builder(this, "core")

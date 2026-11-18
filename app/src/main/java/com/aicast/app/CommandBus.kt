@@ -395,9 +395,11 @@ object Ui {
         a.window.attributes = lp
     }
 
+    /** isInteractive 是 API 20+；4.4 上退回 isScreenOn */
+    @Suppress("DEPRECATION")
     fun isScreenOn(): Boolean = try {
         val pm = App.ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        pm.isInteractive
+        if (android.os.Build.VERSION.SDK_INT >= 20) pm.isInteractive else pm.isScreenOn
     } catch (e: Exception) { true }
 }
 

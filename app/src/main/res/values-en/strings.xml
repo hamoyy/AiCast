@@ -173,4 +173,13 @@
     <string name="update_open_permission">Open settings</string>
     <string name="update_need_permission">Installing an update needs “install unknown apps” permission once. The system will open the settings page; come back and tap again after granting it.</string>
 
+    <!-- legacy UI (API 19~20) -->
+    <string name="legacy_clock_hint">MENU: settings · LEFT: history</string>
+    <string name="legacy_cast_off">casting off</string>
+    <string name="legacy_webview">WebView</string>
+    <string name="legacy_system">System</string>
+    <string name="legacy_update">Update</string>
+    <string name="legacy_verify_failed">Downloaded file failed verification; discarded</string>
+    <string name="legacy_signature_mismatch">Signature mismatch; cannot install</string>
+
 </resources>

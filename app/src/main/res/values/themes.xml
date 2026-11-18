@@ -1,7 +1,10 @@
 <resources>
-    <style name="Theme.AiCast" parent="Theme.AppCompat.NoActionBar">
+    <!--
+      API 19~20 用 Holo（4.4 自带）；21+ 由 values-v21 覆盖成 Material。
+      这里只放两边都有的项：状态栏/导航栏透明是 API 21 属性，放在 v21。
+      Compose 的观感全由 MaterialTheme 决定，窗口主题只负责启动底色，不参与设计。
+    -->
+    <style name="Theme.AiCast" parent="@android:style/Theme.Holo.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

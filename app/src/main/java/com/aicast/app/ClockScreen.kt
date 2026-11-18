@@ -1,3 +1,6 @@
+// 只在 API 21+ 启动（见 LauncherActivity）：Compose 界面不会在 4.4 上加载
+@file:Suppress("NewApi")
+
 package com.aicast.app
 
 import androidx.compose.animation.core.LinearEasing

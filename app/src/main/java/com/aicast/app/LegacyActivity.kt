@@ -92,7 +92,6 @@ class LegacyActivity : Activity() {
 
         HomeRefresh.request = { syncLayers() }
         CommandBus.onCleared = {
-            android.util.Log.i("aicast-ui", "onCleared fired")
             runOnUiThread { hasContent = false; homeLoadedTheme = null; syncLayers() }
         }
 
@@ -123,12 +122,6 @@ class LegacyActivity : Activity() {
         // 待机（时钟或 HTML 主题）时给两个入口；投送内容/面板打开时收起，避免误触
         homeChips?.visibility = if (!overlay && !contentShowing) View.VISIBLE else View.GONE
 
-        android.util.Log.i(
-            "aicast-ui",
-            "sync overlay=$overlay content=$contentShowing local=$hasContent " +
-                "rendering=${CommandBus.isContentRendering()} htmlHome=$htmlHome theme=${Prefs.theme} " +
-                "wv=${webView?.visibility} clock=${clock?.visibility} chips=${homeChips?.visibility}"
-        )
         if (!overlay && contentShowing) {
             homeLoadedTheme = null
             webView?.requestFocus(View.FOCUS_DOWN)

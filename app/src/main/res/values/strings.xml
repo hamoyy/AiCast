@@ -172,4 +172,13 @@
     <string name="update_open_permission">去授权</string>
     <string name="update_need_permission">首次更新需要允许安装未知应用，系统会跳到设置页；授权后回来再点一次即可。</string>
 
+    <!-- 4.4 兼容界面（API 19~20） -->
+    <string name="legacy_clock_hint">菜单键：设置 · 左方向键：历史</string>
+    <string name="legacy_cast_off">投送已关闭</string>
+    <string name="legacy_webview">浏览器内核</string>
+    <string name="legacy_system">系统</string>
+    <string name="legacy_update">应用更新</string>
+    <string name="legacy_verify_failed">下载文件校验失败，已丢弃</string>
+    <string name="legacy_signature_mismatch">签名不一致，无法安装</string>
+
 </resources>

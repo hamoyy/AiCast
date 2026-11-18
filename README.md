@@ -1,7 +1,7 @@
 # AiCast（爱投屏）
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](#)
+[![Android](https://img.shields.io/badge/Android-4.4%2B-3DDC84?logo=android&logoColor=white)](#)
 [![LAN only](https://img.shields.io/badge/network-LAN%20only-lightgrey)](#)
 [![Release](https://img.shields.io/github/v/release/hamoyy/AiCast?label=download)](https://github.com/hamoyy/AiCast/releases/latest)
 
@@ -48,7 +48,8 @@ AiCast 让 agent（智能体）拥有一块屏幕：设备上装一个 app，age
 
 ### 需要准备什么
 
-- 一台闲置的安卓设备（手机 / 平板 / Android TV，Android 7.0 及以上）；
+- 一台闲置的安卓设备（手机 / 平板 / Android TV，**Android 4.4 及以上**）；
+  4.4/5.x/6.x 使用兼容界面（功能对齐，观感朴素），7.0+ 为完整界面；
 - 一台装了 agent（智能体）的电脑（见下一节「哪些 agent 可以用」）；
 - 两者连在**同一个 WiFi** 下。
 

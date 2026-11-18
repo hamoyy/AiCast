@@ -39,21 +39,39 @@ object CommandBus {
      * 就会走 `showHomeTheme()` 把待机主题 load 到内容之后，屏幕上只剩主题。
      * 见 `MainActivity.syncLayers()` 的同名判断。
      */
-    @Volatile private var contentRendering = false
+    /**
+     * 内容已下发给 WebView 的时刻（0 = 没有在途加载）。
+     *
+     * 为什么存时刻而不是布尔：4.4 上 WebView 偶发**不回调 onPageFinished**（渲染进程卡住/被回收），
+     * 布尔一旦置 true 就永远为 true —— 待机主题、设置页全被这层白屏盖住，只能杀进程恢复。
+     * 带超时的判定等于自愈：超过 [RENDER_TIMEOUT_MS] 视为这次加载没成，界面退回待机。
+     */
+    @Volatile private var renderingSince = 0L
+    private const val RENDER_TIMEOUT_MS = 10_000L
 
     fun hasContent(): Boolean = currentUrl != null || lastHtml != null
     fun hasPending(): Boolean = pendingHtml != null
-    fun isContentRendering(): Boolean = contentRendering
+    fun isContentRendering(): Boolean {
+        val t = renderingSince
+        if (t == 0L) return false
+        if (System.currentTimeMillis() - t > RENDER_TIMEOUT_MS) {
+            renderingSince = 0L   // 超时自愈：别再让它占屏
+            return false
+        }
+        return true
+    }
 
-    /** 内容页加载完成（由 MainActivity.onPageFinished 按页面自报身份回填） */
-    fun markContentLoaded() { contentRendering = false }
+    private fun markRendering() { renderingSince = System.currentTimeMillis() }
+
+    /** 内容页加载完成（由 Activity.onPageFinished 回填） */
+    fun markContentLoaded() { renderingSince = 0L }
 
     /** 主框架加载失败：不再等 onPageFinished，立刻允许主题层接管 */
-    fun markLoadFailed() { contentRendering = false }
+    fun markLoadFailed() { renderingSince = 0L }
 
     fun clear() {
         lastHtml = null; currentUrl = null; pendingHtml = null
-        pendingWake = false; contentRendering = false
+        pendingWake = false; renderingSince = 0L
         // WebView 将被隐藏销毁内容，下次 render 重新载入
         main.post { App.webView?.loadUrl("about:blank") }
         onCleared?.invoke()
@@ -73,20 +91,20 @@ object CommandBus {
             pendingHtml = html // 只保留最后一份，避免堆积内存
             pendingWake = pendingWake || wake
             lastHtml = null    // 排队中不算"已上屏"：hasContent 保持 false，状态看 pending
-            contentRendering = false
+            renderingSince = 0L
             return false
         }
         pendingHtml = null
         pendingWake = false
         lastHtml = html
-        contentRendering = true
+        markRendering()
         val full = embedSdk(html, KIND_CONTENT)
         // baseURL 不能为 null：opaque origin 下页面访问 localStorage 会抛 SecurityError
         main.post {
             val wv = App.webView ?: return@post
             if (wake) App.activity?.let { Ui.wake(it) }
             attachBridge(wv)   // 内联内容受信任：把桥挂回来（url 投送会摘掉）
-            wv.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null)
+            wv.loadDataWithBaseURL(BASE_CONTENT, full, "text/html", "UTF-8", null)
         }
         return true
     }
@@ -99,10 +117,10 @@ object CommandBus {
             if (pendingHtml != html) return@post   // 期间已被更新的投送覆盖
             val wake = pendingWake
             pendingHtml = null; pendingWake = false
-            lastHtml = html; currentUrl = null; contentRendering = true
+            lastHtml = html; currentUrl = null; markRendering()
             if (wake) App.activity?.let { Ui.wake(it) }
             attachBridge(wv)
-            wv.loadDataWithBaseURL("https://aicast.local/", embedSdk(html, KIND_CONTENT), "text/html", "UTF-8", null)
+            wv.loadDataWithBaseURL(BASE_CONTENT, embedSdk(html, KIND_CONTENT), "text/html", "UTF-8", null)
         }
     }
 
@@ -116,13 +134,14 @@ object CommandBus {
         lastHtml = null; currentUrl = null
         // 注意：**不要清 pendingHtml**。排队中的投送代表"用户回到前台就该看到的那一屏"，
         // 主题刷新不该把它丢掉（回到前台时 flushPending 会盖在主题上）。
-        contentRendering = false
+        renderingSince = 0L
         val full = embedSdk(html, KIND_THEME) +
             "<style>html,body{overflow:hidden!important}</style>"
         main.post {
             val wv = App.webView ?: return@post
             attachBridge(wv)
-            wv.loadDataWithBaseURL("https://aicast.local/", full, "text/html", "UTF-8", null)
+            // 主题页专用 baseURL：onPageFinished 靠它认身份
+            wv.loadDataWithBaseURL(BASE_THEME, full, "text/html", "UTF-8", null)
         }
     }
 
@@ -136,6 +155,16 @@ object CommandBus {
      */
     const val KIND_CONTENT = "content"
     const val KIND_THEME = "theme"
+
+    /**
+     * 页面身份改用 baseURL 前缀判定，不再靠 `evaluateJavascript` 回读 `__AICAST_KIND`：
+     * 4.4 上那个回调偶发返回空串，主题页会被误判成"投送内容" —— 待机入口消失、按键失效、
+     * 状态卡在"有内容"，只能杀进程恢复（真机 OPPO N5207 复现）。
+     */
+    const val BASE_CONTENT = "https://aicast.local/"
+    const val BASE_THEME = "https://aicast.local/~theme/"
+
+    fun isThemeUrl(url: String?): Boolean = url != null && url.startsWith(BASE_THEME)
 
     // 页面脚本在解析期就可能调用 AiCast，而 evaluateJavascript 要到 onPageFinished
     // 才执行——因此内联投送时必须把 SDK 先嵌进 HTML 头部。
@@ -178,7 +207,7 @@ object CommandBus {
     fun loadUrl(url: String, wake: Boolean): Boolean {
         if (App.webView == null || !App.foreground) return false
         currentUrl = url; lastHtml = null; pendingHtml = null
-        pendingWake = false; contentRendering = true
+        pendingWake = false; markRendering()
         main.post {
             val wv = App.webView ?: return@post
             if (wake) App.activity?.let { Ui.wake(it) }
@@ -395,9 +424,11 @@ object Ui {
         a.window.attributes = lp
     }
 
+    /** isInteractive 是 API 20+；4.4 上退回 isScreenOn */
+    @Suppress("DEPRECATION")
     fun isScreenOn(): Boolean = try {
         val pm = App.ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        pm.isInteractive
+        if (android.os.Build.VERSION.SDK_INT >= 20) pm.isInteractive else pm.isScreenOn
     } catch (e: Exception) { true }
 }
 

@@ -1,3 +1,6 @@
+// 只在 API 21+ 启动（见 LauncherActivity）：文件内所有 API 21+ 调用都不会在 4.4 上执行
+@file:Suppress("NewApi", "RestrictedApi")
+
 package com.aicast.app
 
 import android.os.Bundle
@@ -99,8 +102,14 @@ class MainActivity : ComponentActivity() {
                                 onReplay = { e ->
                                     // url 类历史重播 = 重新加载那个地址（页面是第三方资源，不缓存内容）
                                     val u = e.url
-                                    if (u != null) CommandBus.loadUrl(u, false)
-                                    else e.html?.let { CommandBus.renderHtml(it) }
+                                    when {
+                                        // 只认真正的 http(s)：历史里可能残留 "null" 这类脏值，
+                                        // 拿它当网址加载就是一片白页（老版本落盘 bug 的遗留）
+                                        u != null && (u.startsWith("http://") || u.startsWith("https://")) ->
+                                            CommandBus.loadUrl(u, false)
+                                        e.truncated -> Unit
+                                        else -> e.html?.let { CommandBus.renderHtml(it) }
+                                    }
                                     showHistory.value = false
                                 },
                                 onDelete = { History.remove(it.id); historyVersion.value++ },
@@ -372,22 +381,23 @@ class MainActivity : ComponentActivity() {
                     // 这次加载是"投送内容"还是"待机主题"，由页面自己带来的标记决定。
                     // 不能拿全局 CommandBus.hasContent() 猜：主题页晚于内容页完成时会把状态判反
                     // （/state 报 hasContent=true，屏幕上是时钟）。url 投送的第三方页没标记 → 按内容算。
-                    view.evaluateJavascript("window.__AICAST_KIND||''") { raw ->
-                        if (raw?.trim('"') != CommandBus.KIND_THEME) {
-                            CommandBus.markContentLoaded()
-                            hasContent.value = true
-                            syncLayers()
-                            CommandBus.emit(
-                                "system.page",
-                                """{"url":${JSONObject.quote(url ?: "")}}"""
-                            )
-                        } else {
-                            // 主题页：不碰 contentRendering —— 若同时有一次内容加载在途，
-                            // 要等内容页自己的 onPageFinished 来收尾（否则主题会把内容盖掉）。
-                            // 主题重载不刷 system.page，只有真实投送才记。
-                            if (!CommandBus.hasContent()) hasContent.value = false
-                            syncLayers()
-                        }
+                    // 身份看 baseURL 前缀，不再用 evaluateJavascript 回读窗口标记：
+                    // 4.4 上该回调偶发返回空，主题页会被误判成投送内容（真机复现过）
+                    if (CommandBus.isThemeUrl(url)) {
+                        CommandBus.markContentLoaded()
+                        // 主题页：若同时有一次内容加载在途，不能被主题判定覆盖状态
+                        if (!CommandBus.hasContent()) hasContent.value = false
+                        syncLayers()
+                    } else {
+                        // 迟到的回调：清屏后旧页面的 onPageFinished 才到，会把状态重新置成"有内容"
+                        if (!CommandBus.hasContent() && !CommandBus.isContentRendering()) return
+                        CommandBus.markContentLoaded()
+                        hasContent.value = true
+                        syncLayers()
+                        CommandBus.emit(
+                            "system.page",
+                            """{"url":${JSONObject.quote(url ?: "")}}"""
+                        )
                     }
                 }
 

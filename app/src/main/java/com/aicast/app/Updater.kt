@@ -79,6 +79,8 @@ object Updater {
      * @throws Exception 所有源都拿不到（网络问题），由调用方决定是否提示。
      */
     suspend fun check(ctx: Context): UpdateManifest? = withContext(Dispatchers.IO) {
+        // 4.4 上先补 TLS1.2 + ISRG 根，否则 HTTPS 一律失败（API 21+ 是 no-op）
+        TlsCompat.install(ctx)
         val found = ArrayList<UpdateManifest>()
         var lastError: Exception? = null
         for (u in MANIFEST_URLS) {
@@ -148,6 +150,7 @@ object Updater {
         manifest: UpdateManifest,
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
+        TlsCompat.install(ctx)
         val sources = listOfNotNull(manifest.apkUrl, manifest.apkUrlFallback).distinct()
         var lastError: Exception? = null
         for (src in sources) {

@@ -10,7 +10,6 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.webkit.WebSettings
 import android.webkit.WebView
-import androidx.appcompat.app.AppCompatDelegate
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -240,6 +239,7 @@ object DeviceInfo {
      *
      * Android 9（API 28）以下没有挖孔概念，四项恒为 0；这类设备无需避让。
      */
+    @Suppress("NewApi")  // displayCutoutInsets() 已按 SDK_INT 收口，4.4 返回 null
     private fun cutoutInsets(density: Double): JsonElement {
         var top = 0; var bottom = 0; var left = 0; var right = 0
         val ins = displayCutoutInsets()
@@ -264,11 +264,12 @@ object DeviceInfo {
      *    是实例方法，没有带 displayId 的公开静态版本，拿不到 detached 的值）。
      * API 28 以下没有挖孔概念，直接 null。
      */
+    @Suppress("NewApi")  // 28 以下直接返回 null；30+ 才碰 WindowMetrics
     private fun displayCutoutInsets(): android.graphics.Insets? {
         if (Build.VERSION.SDK_INT < 28) return null
         try {
             if (Build.VERSION.SDK_INT >= 30) {
-                val wm = ctx.getSystemService(WindowManager::class.java)
+                val wm = ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as WindowManager
                 return wm.currentWindowMetrics.windowInsets
                     .getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout())
             }
@@ -284,7 +285,7 @@ object DeviceInfo {
     }
 
     private fun metrics(): DisplayMetrics {
-        val wm = ctx.getSystemService(WindowManager::class.java)
+        val wm = ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as WindowManager
         val dm = DisplayMetrics()
         @Suppress("DEPRECATION")
         wm.defaultDisplay.getRealMetrics(dm)
@@ -292,7 +293,7 @@ object DeviceInfo {
     }
 
     private fun refreshRate(): Int = try {
-        val wm = ctx.getSystemService(WindowManager::class.java)
+        val wm = ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as WindowManager
         @Suppress("DEPRECATION")
         wm.defaultDisplay.refreshRate.roundToInt()
     } catch (e: Exception) { 60 }
@@ -302,9 +303,29 @@ object DeviceInfo {
 
     // 外网可达性由设备端判定（系统自带的 VALIDATED 探测，零流量零轮询），随画像返回，
     // agent 生成内容前据此决定外链 / 内联 / /media 的取舍
-    private fun internetJson(): JsonElement = try {
+    @Suppress("DEPRECATION")
+    private fun internetJson(): JsonElement {
+        return try {
         val cm = ctx.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
             as android.net.ConnectivityManager
+        // 4.4/5.x 没有 NetworkCapabilities（API 21/23）：只能用 activeNetworkInfo 判断是否连上，
+        // 没有 VALIDATED 这个系统级探测结果，如实报 unknown，别让 agent 误判成"外网可用"
+        if (Build.VERSION.SDK_INT < 23) {
+            val ni = cm.activeNetworkInfo
+            val transport = when (ni?.type) {
+                android.net.ConnectivityManager.TYPE_WIFI -> "wifi"
+                android.net.ConnectivityManager.TYPE_ETHERNET -> "ethernet"
+                android.net.ConnectivityManager.TYPE_MOBILE -> "cellular"
+                else -> ""
+            }
+            return JsonObject(
+                mapOf(
+                    "state" to JsonPrimitive(if (ni?.isConnected == true) "unknown" else "offline"),
+                    "validated" to JsonPrimitive(false),
+                    "transport" to JsonPrimitive(transport)
+                )
+            )
+        }
         val caps = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
         val validated = caps?.hasCapability(
             android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED
@@ -329,8 +350,9 @@ object DeviceInfo {
                 "transport" to JsonPrimitive(transport)
             )
         )
-    } catch (e: Exception) {
-        JsonObject(mapOf("state" to JsonPrimitive("unknown")))
+        } catch (e: Exception) {
+            JsonObject(mapOf("state" to JsonPrimitive("unknown")))
+        }
     }
 
     private fun hasFeature(f: String): Boolean =
@@ -347,15 +369,18 @@ object DeviceInfo {
         status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
     } catch (e: Exception) { false }
 
+    /** isInteractive 是 API 20+；4.4 上只有 isScreenOn（deprecated 但仍可用） */
+    @Suppress("DEPRECATION")
     private fun isScreenOn(): Boolean = try {
         val pm = ctx.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-        pm.isInteractive
+        if (Build.VERSION.SDK_INT >= 20) pm.isInteractive else pm.isScreenOn
     } catch (e: Exception) { true }
 
     fun isDarkMode(): Boolean {
         val night = ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        return night == Configuration.UI_MODE_NIGHT_YES ||
-            AppCompatDelegate.getDefaultNightMode() == AppCompatDelegate.MODE_NIGHT_YES
+        // 只认系统配置：原实现还读 AppCompatDelegate.getDefaultNightMode()，但 appcompat
+        // 已从依赖里移除（它 minSdk 21，且会在 4.4 上经 androidx.startup 初始化）
+        return night == Configuration.UI_MODE_NIGHT_YES
     }
 
     private fun round1(v: Double): Double = Math.round(v * 10) / 10.0

@@ -143,7 +143,22 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
    > `webview` 缺失或 `major:0`（老版本 app、或内核尚未初始化）→ **按最保守档（< 66）写**。
    > 下面的 ✔/✘ 都是在 **65** 和 **116** 上逐项实测出来的，不是查表推测。
 
-   **① 保守档安全集（65 实测 ✔，全机队通用，拿不准就用这套）**
+   **① 极旧档（`webview.major < 45`，Android 4.4/5.x 常见 30~33）——下面是 Chromium 33（OPPO N5207 / Android 4.4.4）与 Chromium 30（模拟器）逐项实测：**
+
+   - **JS 只有 ES5**：`let/const`、`class`、模板字符串、箭头函数、解构、默认参数、`for-of`
+     全部 ✘ —— 而且不是"某个功能失效"，是**整段 `<script>` 解析失败、交互全丢**。
+     只用 `var` + `function` + 字符串拼接。
+   - `fetch` ✘（用 `XMLHttpRequest`）；`Promise` ✔；`WebSocket` ✔；`localStorage` ✔。
+   - CSS：`display:grid`、`gap`、CSS 变量、`position:sticky`、`backdrop-filter`、`clamp()`
+     全部 ✘；`flex` 可用但**同时写 `-webkit-` 前缀更稳**；`filter` 只认 `-webkit-filter`；
+     渐变/动画也建议无前缀 + `-webkit-` 双写。
+   - `vmin/vmax` ✔，但**别拿它算首屏字号**：解析期 `innerWidth/innerHeight` 读到 **0**。
+   - `WebGL` ✘（2D canvas ✔）。画面只能做"静态看板 / 清单 / 图文卡 + 基础动画"。
+
+   > 判断口径：`device.webview.major < 45` 一律按这一档写；这份内容在 65/116 上也照样能跑，
+   > 所以**要覆盖全机队，就写 ES5 + 前缀双写的版本**。
+
+   **② 保守档安全集（65 实测 ✔，全机队通用，拿不准就用这套）**
 
    > 已闭环验证：同一份只用这套写法的页面（三列 `grid` + `grid-gap`、`flex` 行用 `margin` 代 gap、
    角标用 `top/right` 定位），在 65 与 116 两台设备上量出的元素坐标**完全一致**。
@@ -154,7 +169,7 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
    `scroll-behavior` · `overscroll-behavior` · `100vh` · 固定 px 字号 ·
    `@supports` / `@media` / `@keyframes` · `top/right/bottom/left` 定位。
 
-   **② 保守档必须避开（65 实测 ✘，写了整条声明被静默丢弃）**
+   **③ 保守档必须避开（65 实测 ✘，写了整条声明被静默丢弃）**
 
    `inset` · `clamp() / min() / max()` · `env()` · `aspect-ratio` · `backdrop-filter` ·
    `dvh / svh / lvh` · `scroll-snap` · `accent-color` · `margin-inline` / `inset-inline` ·
@@ -169,7 +184,7 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
      `display:grid` + `grid-gap`（65 实测 `true`，全档安全）。
    - 深色模式判断用画像的 `appearance.darkMode`，**别用 `@media (prefers-color-scheme)`**（65/66 不支持）。
 
-   **③ JS 比 CSS 更要命：语法不支持不是某个属性失效，而是整个 `<script>` 解析失败、脚本全丢。**
+   **④ JS 比 CSS 更要命：语法不支持不是某个属性失效，而是整个 `<script>` 解析失败、脚本全丢。**
 
    major < 80 时**禁用** `?.`（可选链）、`??`（空值合并）、`||=` / `??=`（逻辑赋值）；
    major < 66 再禁用 `catch {}`（省略异常变量）、`1_000`（数字分隔符）、class fields。
@@ -177,7 +192,7 @@ CLI 在 `render` 撞上 `cast_disabled` 时也会原样打印这段话。
    展开运算符 · `for-of` · generator · `async/await` · `**` · 正则新特性全套
    （命名捕获组 / lookbehind / `\p{L}` / dotAll）。
 
-   **④ 常用 API 的最低 major**（下面这些都 65 实测 ✘，写前先比 `major`）
+   **⑤ 常用 API 的最低 major**（下面这些都 65 实测 ✘，写前先比 `major`）
 
    `String.trimStart`(66) · `AbortController`(66) · `navigator.clipboard`(66) · `BigInt`(67) ·
    `Array.flat`(69) · `globalThis`(71) · `Intl.RelativeTimeFormat`(71) · `Object.fromEntries`(73) ·

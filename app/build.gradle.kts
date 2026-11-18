@@ -11,12 +11,17 @@ android {
 
     defaultConfig {
         applicationId = "com.aicast.app"
-        minSdk = 24
+        // 19 = Android 4.4。4.4/4.4W 走 LegacyActivity（纯 View 界面），5.0+ 走 Compose。
+        // Compose 依赖自身声明 minSdk 21，靠 AndroidManifest 里的 tools:overrideLibrary 放行；
+        // 低版本系统上只要不加载那些类就是安全的 —— 见 LauncherActivity 的分派逻辑。
+        minSdk = 19
         targetSdk = 35
+        // minSdk < 21 必须开 multidex：4.4 的 Dalvik 只自动加载 classes.dex
+        multiDexEnabled = true
         // versionCode 必须单调递增：应用内更新靠它判断新旧。
         // 打 tag 发版时 CI 会校验 tag 与 versionName 一致（见 .github/workflows/build.yml）。
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -43,6 +48,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Ktor 3 的日期工具用了 java.time（API 26+），4.4/5.x/6.x 靠 desugaring 回填
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
 
@@ -51,6 +58,11 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
+
+    // 4.4 上必须显式安装第二段 dex（manifest 里 application 用 MultiDexApplication）
+    implementation("androidx.multidex:multidex:2.0.1")
+
     val ktorVersion = "3.3.3"
     implementation("io.ktor:ktor-server-core-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-cio-jvm:$ktorVersion")
@@ -66,5 +78,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
+    // appcompat 已移除：1.7.x 要求 minSdk 21，且会在 4.4 上经 androidx.startup 自动初始化。
+    // 窗口主题改用平台主题（values/themes.xml），夜模式判断改读 Configuration。
 }

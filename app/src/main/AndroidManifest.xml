@@ -2,6 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+      minSdk 19（Android 4.4），但 Compose 那批库自带 minSdk 21。
+      低版本系统上这些类不会被加载（LauncherActivity 按版本分派，用类名字符串而非 Class 引用），
+      所以放行合并；代价是**任何 Compose / API 21+ 的类都不能出现在 4.4 的代码路径上**。
+    -->
+    <uses-sdk
+        android:minSdkVersion="19"
+        tools:overrideLibrary="androidx.activity.compose,androidx.compose.animation,androidx.compose.animation.core,androidx.compose.foundation,androidx.compose.foundation.layout,androidx.compose.material.icons,androidx.compose.material.ripple,androidx.compose.material3,androidx.compose.runtime,androidx.compose.runtime.saveable,androidx.compose.ui,androidx.compose.ui.geometry,androidx.compose.ui.graphics,androidx.compose.ui.text,androidx.compose.ui.unit,androidx.compose.ui.util,androidx.graphics.path,androidx.lifecycle.runtime.compose" />
+
     <!-- 即用即开：仅普通运行时权限，无特殊权限（见 docs/DESIGN.md §8） -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -20,7 +29,12 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
+    <!--
+      MultiDexApplication：4.4 上必须在启动时安装第二段 dex。
+      5.0+ 上它只是原生的 no-op 子类，没有副作用。
+    -->
     <application
+        android:name="androidx.multidex.MultiDexApplication"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
@@ -29,19 +43,36 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
 
+        <!-- 启动分派：4.4~4.4W 进 LegacyActivity，5.0+ 进 MainActivity（Compose） -->
         <activity
-            android:name=".MainActivity"
+            android:name=".LauncherActivity"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|density|smallestScreenSize|screenLayout"
-            android:turnScreenOn="true"
-            android:windowSoftInputMode="adjustPan|stateHidden">
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|density|smallestScreenSize|screenLayout">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- API 21+：Compose 界面。不要在 4.4 上启动它 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|density|smallestScreenSize|screenLayout"
+            android:turnScreenOn="true"
+            android:windowSoftInputMode="adjustPan|stateHidden" />
+
+        <!-- API 19~20：纯 View 界面（4.4 / 4.4W） -->
+        <activity
+            android:name=".LegacyActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode|density|smallestScreenSize|screenLayout"
+            android:windowSoftInputMode="adjustPan|stateHidden" />
 
         <service
             android:name=".AiCastService"
@@ -73,5 +104,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!--
+          lifecycle/emoji2 会自动注册 androidx.startup 的初始化 Provider，它在**进程启动**
+          就会实例化各 Initializer。4.4 上这条链路没有任何用途（我们不用 emoji2、不装
+          baseline profile），却要在最脆弱的老系统上多跑一段启动代码，直接移除。
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="remove" />
     </application>
 </manifest>

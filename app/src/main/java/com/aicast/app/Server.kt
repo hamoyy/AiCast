@@ -5,15 +5,16 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.AiCastApplicationFactory
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
-import io.ktor.server.cio.CIOApplicationEngine
-import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
+import io.ktor.server.engine.ApplicationEngine
+import io.ktor.server.engine.EngineConnectorBuilder
+import io.ktor.server.engine.applicationEnvironment
 import io.ktor.server.http.content.LocalFileContent
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.contentType
@@ -48,6 +49,7 @@ import kotlinx.serialization.json.put
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.URI
+import kotlin.coroutines.EmptyCoroutineContext
 
 /** 内置 HTTP server（§5）：/health /info /auth /render /message /param /state /events /theme(s) /media */
 private const val MAX_BODY_BYTES = 4 * 1024 * 1024
@@ -67,7 +69,7 @@ object Server {
     @Volatile var lastError: String? = null
         private set
 
-    @Volatile private var engine: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
+    @Volatile private var engine: ApplicationEngine? = null
 
     fun isRunning(): Boolean = engine != null
 
@@ -80,18 +82,55 @@ object Server {
         for (i in 0..PORT_FALLBACK_TRIES) {
             val p = DEFAULT_PORT + i
             try {
-                val e = embeddedServer(CIO, port = p, host = "0.0.0.0") { module() }
+                val e = bootEngine(p)
                 e.start(wait = false)
                 engine = e
                 port = p
                 lastError = null
                 return true
             } catch (t: Throwable) {
+                engine = null
                 lastError = "${t.javaClass.simpleName}: ${t.message}"
                 android.util.Log.w("aicast", "server start failed on $p", t)
             }
         }
         return false
+    }
+
+    /**
+     * 自己组装 Application + CIO 引擎，**不用 `embeddedServer()`**。
+     *
+     * 原因：`EmbeddedServer` 类里有 `java.nio.file.WatchService/WatchKey` 引用（开发期热重载用），
+     * 而 `java.nio.file` 在 Android 上是 API 26 才引入的。Dalvik（Android 4.4）在校验阶段就会
+     * 把整个类判死并抛 `VerifyError`，服务端根本起不来（ART 5.0+ 是软失败，所以高版本没暴露）。
+     *
+     * 这里替换掉的只是「组装」这一层：Application、CIO 引擎、连接器配置都不碰 java.nio.file，
+     * 路由与插件照旧。行为差异只有一点：不再有开发模式的文件监听（本 app 从来不用）。
+     */
+    private fun bootEngine(p: Int): ApplicationEngine {
+        val env = applicationEnvironment { }
+        val monitor = env.monitor
+        val conf = CIO.configuration {
+            connectors.add(EngineConnectorBuilder().apply {
+                host = "0.0.0.0"
+                port = p
+            })
+        }
+        // 顺序很关键：引擎构造期就会回调 applicationProvider，所以 Application 必须先存在；
+        // 而 Application 又要能回头拿到引擎 —— 用一个可空引用把这一环接上（只在请求期取用）。
+        var engineRef: ApplicationEngine? = null
+        val app = AiCastApplicationFactory.create(
+            env, false, "", monitor, EmptyCoroutineContext
+        ) { engineRef ?: error("engine not ready") }
+        val e = CIO.create(env, monitor, false, conf) { app }
+        engineRef = e
+        // 这两条事件原本由 EmbeddedServer 触发：引擎靠 ApplicationStarting 给 Application
+        // 装默认管线/默认拦截器（见 BaseApplicationEngine 的 init）。漏掉它，端口能 listen
+        // 但请求永远得不到响应 —— 实测就是「连上了、没有任何 byte 回来」。
+        monitor.raise(io.ktor.server.application.ApplicationStarting, app)
+        app.module()
+        monitor.raise(io.ktor.server.application.ApplicationStarted, app)
+        return e
     }
 
     fun stop() {

@@ -92,6 +92,7 @@ class LegacyActivity : Activity() {
 
         HomeRefresh.request = { syncLayers() }
         CommandBus.onCleared = {
+            android.util.Log.i("aicast-ui", "onCleared fired")
             runOnUiThread { hasContent = false; homeLoadedTheme = null; syncLayers() }
         }
 
@@ -122,6 +123,12 @@ class LegacyActivity : Activity() {
         // 待机（时钟或 HTML 主题）时给两个入口；投送内容/面板打开时收起，避免误触
         homeChips?.visibility = if (!overlay && !contentShowing) View.VISIBLE else View.GONE
 
+        android.util.Log.i(
+            "aicast-ui",
+            "sync overlay=$overlay content=$contentShowing local=$hasContent " +
+                "rendering=${CommandBus.isContentRendering()} htmlHome=$htmlHome theme=${Prefs.theme} " +
+                "wv=${webView?.visibility} clock=${clock?.visibility} chips=${homeChips?.visibility}"
+        )
         if (!overlay && contentShowing) {
             homeLoadedTheme = null
             webView?.requestFocus(View.FOCUS_DOWN)
@@ -215,7 +222,15 @@ class LegacyActivity : Activity() {
             this,
             onReplay = { entry ->
                 val u = entry.url
-                if (u != null) CommandBus.loadUrl(u, false) else entry.html?.let { CommandBus.renderHtml(it) }
+                when {
+                    u != null && (u.startsWith("http://") || u.startsWith("https://")) ->
+                        CommandBus.loadUrl(u, false)
+                    // 超大内容只存了摘要：拼回页面必然是残缺白屏，明确拒绝而不是假装成功
+                    entry.truncated -> android.widget.Toast.makeText(
+                        this, Str.get(R.string.history_not_restorable), android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    else -> entry.html?.let { CommandBus.renderHtml(it) }
+                }
                 closePanel()
             },
             onClose = { closePanel() },
@@ -354,20 +369,23 @@ class LegacyActivity : Activity() {
         }
         webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String?) {
-                if (url == "about:blank") return
+                if (url == null || url == "about:blank") return
                 injectSdk(view)
                 view.requestFocus(View.FOCUS_DOWN)
-                // evaluateJavascript 是 API 19 引入的，4.4 可用
-                view.evaluateJavascript("window.__AICAST_KIND||''") { raw ->
-                    if (raw?.trim('"') != CommandBus.KIND_THEME) {
-                        CommandBus.markContentLoaded()
-                        hasContent = true
-                        syncLayers()
-                        CommandBus.emit("system.page", """{"url":${JSONObject.quote(url ?: "")}}""")
-                    } else {
-                        if (!CommandBus.hasContent()) hasContent = false
-                        syncLayers()
-                    }
+                // 身份看 baseURL 前缀（CommandBus.BASE_THEME）而不是 evaluateJavascript 回读：
+                // 4.4 上那个回调会偶发返回空，主题页被当成内容后待机就再也回不来了
+                if (CommandBus.isThemeUrl(url)) {
+                    CommandBus.markContentLoaded()
+                    if (!CommandBus.hasContent()) hasContent = false
+                    syncLayers()
+                } else {
+                    // 迟到的回调：清屏后旧页面的 onPageFinished 才到，把状态又置回"有内容"，
+                    // 于是空白 WebView 重新盖住待机 —— 4.4 上真机就是一片白屏。总线说没内容就忽略。
+                    if (!CommandBus.hasContent() && !CommandBus.isContentRendering()) return
+                    CommandBus.markContentLoaded()
+                    hasContent = true
+                    syncLayers()
+                    CommandBus.emit("system.page", """{"url":${JSONObject.quote(url)}}""")
                 }
             }
 
@@ -375,6 +393,9 @@ class LegacyActivity : Activity() {
             @Suppress("DEPRECATION", "OverridingDeprecatedMember")
             override fun onReceivedError(view: WebView, errorCode: Int, description: String?, failingUrl: String?) {
                 CommandBus.markLoadFailed()
+                // 加载失败不能继续占屏：4.4 上失败页就是一块白，用户以为整个 app 挂了
+                hasContent = false
+                syncLayers()
                 CommandBus.emit(
                     "page.error",
                     JSONObject().put("url", failingUrl ?: "")

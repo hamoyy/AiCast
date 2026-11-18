@@ -51,7 +51,11 @@ object History {
                                 size = o.optInt("size"),
                                 truncated = o.optBoolean("truncated"),
                                 html = if (o.isNull("html")) null else o.optString("html"),
-                                url = o.optString("url", "").ifEmpty { null }
+                                // org.json 的坑：JSON null 经 optString 读出来是字符串 "null"。
+                                // 以前 html 条目存成 "url":null，重载后 url 就变成 "null"，
+                                // 回放时拿它当网址去加载 → 一片白页（真机 4.4 复现，新界面同样中招）
+                                url = if (o.isNull("url")) null else o.optString("url", "")
+                                    .takeIf { it.isNotEmpty() && it != "null" && it != "undefined" }
                             )
                         )
                     }

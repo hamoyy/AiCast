@@ -247,23 +247,43 @@ object Updater {
     fun canInstall(ctx: Context): Boolean =
         if (Build.VERSION.SDK_INT >= 26) ctx.packageManager.canRequestPackageInstalls() else true
 
-    fun openInstallPermissionSettings(ctx: Context) {
-        if (Build.VERSION.SDK_INT < 26) return
-        try {
-            ctx.startActivity(
-                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}"))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        } catch (e: Exception) {
-            // 个别 ROM 没有这个页面，退到应用详情页（用户仍能找到「安装未知应用」）
-            runCatching {
-                ctx.startActivity(
-                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.parse("package:${ctx.packageName}"))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
+    /**
+     * 这台机器上到底有没有「安装未知应用」这个设置页。
+     *
+     * 关键：`canRequestPackageInstalls()` 在部分电视 ROM（实测小米电视 MiTV_MFTP0 / Android 9）上恒为 false，
+     * 但系统压根没有这个 per-app 设置页，安装器也不拦——权限开关在电视自己的「帐号与安全」里
+     * （全局「安装未知来源的应用」）。此时若仍按手机的逻辑弹「去授权」，用户点完什么都没发生，
+     * 更新就此卡死。所以**先问设置页在不在**，不在就直接走安装。
+     */
+    fun hasInstallPermissionPage(ctx: Context): Boolean = try {
+        ctx.packageManager.resolveActivity(
+            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")), 0
+        ) != null
+    } catch (e: Exception) {
+        false
+    }
+
+    /**
+     * 打开「允许安装未知应用」相关页面。
+     * @return 是否真的打开了某个页面（找不到页面时返回 false，由调用方给出文字说明，
+     *         不能像以前那样静默关掉弹窗——用户只会看到「点了没反应」）。
+     */
+    fun openInstallPermissionSettings(ctx: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 26) return false
+        val candidates = listOf(
+            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}")),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")),
+            Intent(Settings.ACTION_SECURITY_SETTINGS),
+            // 小米电视：系统设置 → 帐号与安全（全局「安装未知来源的应用」开关在这里）
+            Intent("com.xiaomi.mitv.settings.SECURITY_SETTINGS"),
+        )
+        for (i in candidates) {
+            if (ctx.packageManager.resolveActivity(i, 0) == null) continue
+            if (runCatching { ctx.startActivity(Intent(i).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess) {
+                return true
             }
         }
+        return false
     }
 
     /** 把网络异常翻成人话：用户/电视上不需要看到 UnknownHostException 这种词 */

@@ -124,7 +124,10 @@ class UpdateController(private val ctx: Context, private val scope: CoroutineSco
     }
 
     fun startUpdate(manifest: UpdateManifest) {
-        if (!Updater.canInstall(ctx)) {
+        // 只有在「这台机器确实有这个设置页」且尚未授权时，才先让用户去授权。
+        // 电视 ROM 常见情况：canInstall() 恒为 false，但设置页不存在、安装器也不拦
+        // （全局开关在电视自己的「帐号与安全」里）——那种机器上先拦一道就等于永远更不了。
+        if (!Updater.canInstall(ctx) && Updater.hasInstallPermissionPage(ctx)) {
             state = UpdateState.NeedsPermission(manifest)
             dialogVisible = true
             return
@@ -153,7 +156,14 @@ class UpdateController(private val ctx: Context, private val scope: CoroutineSco
                 }
                 state = UpdateState.Idle
                 dialogVisible = false
-                Updater.install(ctx, file)
+                // 系统没有安装器 / 被 ROM 拦下时 startActivity 会抛：别静默消失，要留下人话
+                runCatching { Updater.install(ctx, file) }.onFailure {
+                    state = UpdateState.Failed(
+                        manifest,
+                        "下载完成，但系统没能拉起安装器。请在电视上确认「安装未知来源的应用」已开启，再点重试"
+                    )
+                    dialogVisible = true
+                }
             } catch (e: Exception) {
                 state = UpdateState.Failed(manifest, Updater.describeError(e))
             }
@@ -161,9 +171,17 @@ class UpdateController(private val ctx: Context, private val scope: CoroutineSco
     }
 
     fun openPermission(manifest: UpdateManifest) {
-        Updater.openInstallPermissionSettings(ctx)
-        state = UpdateState.Idle
-        dialogVisible = false
+        if (Updater.openInstallPermissionSettings(ctx)) {
+            state = UpdateState.Idle
+            dialogVisible = false
+        } else {
+            // 找不到任何可打开的设置页：把话说明白，别让弹窗凭空消失
+            state = UpdateState.Failed(
+                manifest,
+                "这台设备没有「安装未知应用」的设置页。电视上请到 设置 → 帐号与安全 里打开" +
+                    "「安装未知来源的应用」，然后回来点重试（本机通常已默认开启）"
+            )
+        }
     }
 
     /** 权限页回来后再点一次「检查/更新」即可继续；这里只把状态复位 */
@@ -352,11 +370,23 @@ fun AboutSection(controller: UpdateController, onMessage: (String) -> Unit) {
         else -> stringResource(R.string.update_check)
     }
 
-    SettingsActionRow(label, enabled = state !is UpdateState.Checking) {
+    val rowFocus = remember { FocusRequester() }
+    // 检查中**不能**把整行设成不可点击：`clickable(enabled = false)` 会同时让它失去可聚焦性，
+    // 电视上焦点立刻掉到别的行（实测掉到「待机主题」），用户会以为界面卡死了。
+    // 现在改成：行始终可聚焦，检查中由下面 when 忽略点击，焦点留在原地。
+    var dialogWasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(controller.dialogVisible) {
+        val open = controller.dialogVisible
+        // 弹窗关掉后把焦点还给这一行，否则焦点无处可去，方向键像失灵
+        if (dialogWasOpen && !open) runCatching { rowFocus.requestFocus() }
+        dialogWasOpen = open
+    }
+    SettingsActionRow(label, focusRequester = rowFocus) {
         when (state) {
+            is UpdateState.Checking -> {}                                  // 正在查，忽略重复点击
             is UpdateState.Available -> controller.startUpdate(state.manifest)
             is UpdateState.NeedsPermission -> controller.openPermission(state.manifest)
-            is UpdateState.Failed -> controller.reset()
+            is UpdateState.Failed -> state.manifest?.let { controller.startUpdate(it) } ?: controller.reset()
             else -> controller.checkManually { msg -> if (msg.isNotBlank()) onMessage(msg) }
         }
     }
@@ -364,12 +394,18 @@ fun AboutSection(controller: UpdateController, onMessage: (String) -> Unit) {
 
 /** 与 ToggleRow 同一套焦点口径：整行可聚焦、整行变亮 + accent 描边 */
 @Composable
-private fun SettingsActionRow(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun SettingsActionRow(
+    text: String,
+    enabled: Boolean = true,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(10.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .let { if (focusRequester != null) it.focusRequester(focusRequester) else it }
             .background(if (focused) updFocusBg else Color.Transparent, shape)
             .border(
                 if (focused) 2.dp else 0.dp,

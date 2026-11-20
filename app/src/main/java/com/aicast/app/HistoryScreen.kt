@@ -80,7 +80,9 @@ fun HistoryScreen(
     val closeReq = remember { FocusRequester() }
     // 每行一对焦点请求器：行本身、行内删除按钮。列表变化时重建。
     val reqs = remember(entries) {
-        entries.associate { it.id to Pair(FocusRequester(), FocusRequester()) }
+        val m = HashMap<String, Pair<FocusRequester, FocusRequester>>(entries.size)
+        for (e in entries) m[e.id] = Pair(FocusRequester(), FocusRequester())
+        m
     }
 
     Column(

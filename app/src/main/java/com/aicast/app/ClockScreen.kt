@@ -55,6 +55,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.os.ConfigurationCompat
 import kotlinx.coroutines.delay
 import kotlin.math.min
 import kotlin.math.sin
@@ -181,7 +182,11 @@ private fun ClockBlock(timeSize: androidx.compose.ui.unit.TextUnit) {
     val cfg = LocalConfiguration.current
     val ctx = LocalContext.current
     // 语言/12-24 小时制一变就重建格式器（key 变了 remember 重算）
-    val locale = remember(cfg) { cfg.locales.get(0) ?: Locale.getDefault() }
+    // 必须走 ConfigurationCompat：Configuration.getLocales() 是 API 24 才有的方法，
+    // 直接调用会在 4.4~6.x 上 NoSuchMethodError 启动即闪退（issue #2 实测 Android 5.1）
+    val locale = remember(cfg) {
+        ConfigurationCompat.getLocales(cfg)[0] ?: Locale.getDefault()
+    }
     val h24 = remember(ctx, cfg) { is24Hour(ctx) }
     val timeFmt = remember(locale, h24) {
         SimpleDateFormat(if (h24) "HH:mm" else "h:mm", locale)

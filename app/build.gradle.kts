@@ -20,8 +20,8 @@ android {
         multiDexEnabled = true
         // versionCode 必须单调递增：应用内更新靠它判断新旧。
         // 打 tag 发版时 CI 会校验 tag 与 versionName 一致（见 .github/workflows/build.yml）。
-        versionCode = 4
-        versionName = "0.3.1"
+        versionCode = 5
+        versionName = "0.3.2"
     }
 
     signingConfigs {

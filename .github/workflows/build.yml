@@ -84,6 +84,14 @@ jobs:
             echo "::warning::未配置 AICAST_KEYSTORE_BASE64，本次用临时签名，装到已有设备需先卸载"
           fi
 
+      # 老系统上最常见的崩溃是「调用了高于 minSdk 的 API」（例如 Configuration.getLocales 是
+      # API 24，直接在 4.4~6.x 上启动即 NoSuchMethodError，v0.3.1 就这么崩过一次，issue #2）。
+      # lint 的 NewApi 检查能在发版前抓住这类问题，所以放进 CI，别只靠真机试。
+      - name: Lint（高版本 API / 清单 / Compose 规则）
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:lintDebug --no-daemon --console=plain
+
       - name: 编译 debug APK（日常推送 / PR）
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
